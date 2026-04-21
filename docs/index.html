@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A Joint Minimization Framework for Transformer Interpretability — Saqib Nazir Bhat</title>
+<title>A Joint Minimization Framework for Transformer Interpretability, Saqib Nazir Bhat</title>
 <meta name="author" content="Saqib Nazir Bhat">
 <meta name="description" content="Information Crystallization: a bottom-up algorithm for minimal-circuit discovery in transformer language models. Solo, independent research.">
 <meta name="keywords" content="transformer interpretability, mechanistic interpretability, AI safety, circuit discovery, lottery ticket hypothesis, ROME, residual stream">
@@ -232,8 +232,8 @@ tractable under a sparsity assumption.</p>
 $$ \delta \;=\; f_\theta(X)[\hat{x}] \;-\; \max_{v \neq \hat{x}} f_\theta(X)[v]. $$
 The argmax condition is equivalent to $\delta > 0$. Softmax is strictly
 monotone, so preserving the argmax requires only preserving the
-<em>sign</em> of $\delta$ &mdash; no particular probability value needs to
-match. This is the key relaxation. A distribution-matching condition becomes
+<em>sign</em> of $\delta$. No particular probability value needs to
+match. This is the key relaxation: a distribution-matching condition becomes
 a margin inequality.</p>
 
 <p>Most parameters do not determine the identity of the winning token: they
@@ -391,7 +391,7 @@ the last input token. Mean distance of $t^*$ from the end:</p>
 <p>This is consistent with the attention-concentration claim
 (Conjecture&nbsp;2) and inconsistent with the suffix-only conjecture. On
 long-range sequences, $t^*$ tracks the subject noun rather than any suffix
-position. Small $n$ — especially $n{=}3$ for long-range — is a caveat.</p>
+position. Small $n$ (especially $n{=}3$ for long-range) is a caveat.</p>
 
 <p><strong>Parameter seed $j^*$ (inconclusive).</strong> In 17/17 sequences
 the seed parameter tensor was <code>transformer.wte.weight</code>. Because
@@ -399,7 +399,7 @@ GPT-2 ties this to <code>lm_head.weight</code>, this is uninformative about
 the $S_L$ vs $S_{\text{supp}}$ split. A stronger reading: the concentration
 of direct-logit gradient on a single tensor suggests the direct
 (unembedding-path) contribution dominates the residual-stream-mediated
-contribution in the seed step — which, if it generalizes, means $S_L$ is
+contribution in the seed step. If that generalizes, it means $S_L$ is
 the empirically dominant component.</p>
 
 <h3>Full protocol (for N ≥ 1,000)</h3>

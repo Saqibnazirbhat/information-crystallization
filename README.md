@@ -1,6 +1,6 @@
 # A Joint Minimization Framework for Transformer Interpretability
 
-**Information Crystallization** — a bottom-up algorithm for discovering minimal circuits in transformer language models.
+**Information Crystallization.** A bottom-up algorithm for discovering minimal circuits in transformer language models.
 
 **Author:** Saqib Nazir Bhat
 **Date:** March 2026
@@ -25,7 +25,7 @@ Building on this relaxation, I introduce **Information Crystallization**: an $O(
 
 | File | Description |
 |------|-------------|
-| [`paper.tex`](paper.tex) | LaTeX source — full paper |
+| [`paper.tex`](paper.tex) | LaTeX source, full paper |
 | [`references.bib`](references.bib) | BibTeX bibliography |
 | [`docs/paper.pdf`](docs/paper.pdf) | Compiled PDF |
 | [`docs/index.html`](docs/index.html) | Web-rendered version with MathJax equations |
@@ -47,7 +47,7 @@ pdflatex paper.tex
 pdflatex paper.tex
 ```
 
-Or use [Overleaf](https://overleaf.com) — upload `paper.tex` and `references.bib`.
+Or use [Overleaf](https://overleaf.com): upload `paper.tex` and `references.bib`.
 
 ---
 

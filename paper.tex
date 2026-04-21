@@ -64,10 +64,10 @@ starting from the full model. The search space is $O(2^d)$ for parameters
 heuristics to make this tractable.
 
 This paper takes a different route. I observe that the practical interpretability
-question---``why did the model produce \emph{this} token?''---does not require
+question, ``why did the model produce \emph{this} token?'', does not require
 reproducing the model's full output distribution. It requires only that the
-restricted model still predicts the same token. That is a weaker condition, and
-it is the key lever for the rest of the paper.
+restricted model still predicts the same token. That is a weaker condition. It
+is the key lever for the rest of the paper.
 
 \paragraph{Contributions.}
 \begin{enumerate}
@@ -90,7 +90,7 @@ also uses gradient approximations to circumvent the combinatorial cost of
 full ablation. The critical difference is direction: attribution patching
 scores every parameter once by its linearized ablation effect; Information
 Crystallization iteratively grows a set from a single seed. The two methods
-are complementary---attribution patching produces a dense importance map;
+are complementary. Attribution patching produces a dense importance map;
 Information Crystallization produces a minimal sufficient subset. Automated
 Circuit Discovery (ACDC)~\citep{conmy2023automated} is the canonical
 top-down baseline we contrast with. The bottom-up construction also echoes
@@ -128,8 +128,8 @@ $X$ restricted to positions $T$.
 \paragraph{Operationalization of $\theta_S$.} Throughout this paper I take
 zero-ablation: entries outside $S$ are set to zero. This is the simplest
 commitment and is what Algorithm~\ref{alg:crystallize} evaluates. Alternative
-operationalizations---mean-ablation over a reference distribution, or
-activation-patching from a paired input---are compatible with the framework
+operationalizations (mean-ablation over a reference distribution, or
+activation-patching from a paired input) are compatible with the framework
 and in general yield different minimal $(S, T)$. The choice matters empirically:
 zero-ablation is conservative (it over-attributes because the network sees
 degenerate inputs it was never trained on), while mean-ablation is more
@@ -355,8 +355,8 @@ shared tensor. Both are future work.
 
 \subsection{Lottery Ticket connection}
 
-\citet{frankle2019lottery} show that dense networks contain sparse subnetworks
----``winning tickets''---that match the full network's performance when
+\citet{frankle2019lottery} show that dense networks contain sparse subnetworks,
+so-called ``winning tickets'', that match the full network's performance when
 trained in isolation. The conjecture here is the inference-time analogue: for
 a fixed input $X$ and prediction $\hat{x}$, there exists a sparse subnetwork
 that preserves the argmax without retraining.
@@ -453,8 +453,8 @@ long-range ($n{=}3$) & \textbf{7.67} \\
 \end{tabular}
 \end{center}
 
-This is evidence---subject to the obvious caveat of small $n$, especially
-$n{=}3$ in the long-range bucket---consistent with
+This is evidence, subject to the obvious caveat of small $n$ (especially
+$n{=}3$ in the long-range bucket), consistent with
 Conjecture~\ref{conj:attention} (attention concentration, not suffix recency)
 and inconsistent with Conjecture~\ref{conj:suffix} (suffix only). On
 long-range sequences, $t^*$ lands on the subject noun rather than on any

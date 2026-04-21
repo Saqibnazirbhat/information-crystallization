@@ -4,21 +4,21 @@
 **Model:** GPT-2 small (124M parameters, 12 transformer blocks).
 **Implementation:** [`seed_phase.ipynb`](seed_phase.ipynb).
 
-N = 17 is a feasibility check, not a statistically significant study. Sub-bucket sizes are small — the long-range bucket contains only 3 sequences.
+N = 17 is a feasibility check, not a statistically significant study. Sub-bucket sizes are small. The long-range bucket contains only 3 sequences.
 
-## Finding 1 — Parameter seed j\*: inconclusive, with a nuanced reading
+## Finding 1: Parameter seed j\* is inconclusive
 
 In 17 / 17 sequences, the seed parameter tensor was `transformer.wte.weight`.
 
 ### The inconclusive part
 
-This result is **methodologically uninformative for the S<sub>L</sub> vs S<sub>supp</sub> decomposition**. GPT-2 ties `lm_head.weight` to `transformer.wte.weight` — the input-embedding matrix and the unembedding projection share the same parameter tensor. Any gradient flowing back through the unembedding lands in `wte.weight`, so the experiment cannot distinguish "seed localizes in the input embedding" from "seed localizes in the unembedding projection." A clean test requires either (a) a model without weight-tying — e.g., Pythia-160M, OPT — or (b) an experimental design that separately attributes gradient mass to the embedding-path and unembedding-path through `wte.weight`.
+This result is **methodologically uninformative for the S<sub>L</sub> vs S<sub>supp</sub> decomposition**. GPT-2 ties `lm_head.weight` to `transformer.wte.weight`, so the input-embedding matrix and the unembedding projection share the same parameter tensor. Any gradient flowing back through the unembedding lands in `wte.weight`, so the experiment cannot distinguish "seed localizes in the input embedding" from "seed localizes in the unembedding projection." A clean test requires either (a) a model without weight-tying (for example Pythia-160M or OPT), or (b) an experimental design that separately attributes gradient mass to the embedding-path and unembedding-path through `wte.weight`.
 
 ### A stronger reading that survives the artifact
 
-The fact that 17/17 seeds landed on *one specific parameter tensor* — out of ~140 distinct tensors across 12 transformer blocks — is not uninformative. It says the direct gradient of log P(x̂ | X) is concentrated on the final linear projection into logit space, and that this direct contribution dominates the residual-stream-mediated contributions at the seed step. If that concentration generalizes to untied architectures, it implies that S<sub>L</sub> (which contains the unembedding by construction) is the *empirically dominant* component of the minimal set, and that S<sub>supp</sub> serves as a refinement rather than an equal partner. This reading is consistent with the paper's framing but goes beyond what the weight-tied experiment can formally establish.
+The fact that 17/17 seeds landed on *one specific parameter tensor*, out of about 140 distinct tensors across 12 transformer blocks, is not uninformative. It says the direct gradient of log P(x̂ | X) is concentrated on the final linear projection into logit space, and that this direct contribution dominates the residual-stream-mediated contributions at the seed step. If that concentration generalizes to untied architectures, it implies that S<sub>L</sub> (which contains the unembedding by construction) is the *empirically dominant* component of the minimal set, and that S<sub>supp</sub> serves as a refinement rather than an equal partner. This reading is consistent with the paper's framing but goes beyond what the weight-tied experiment can formally establish.
 
-## Finding 2 — Input-position seed t\* (meaningful; refutes suffix-only heuristic)
+## Finding 2: Input-position seed t\* refutes the suffix-only heuristic
 
 No weight-tying confound here. Across the 17 sequences:
 
@@ -53,7 +53,7 @@ $$j^* \;=\; \arg\max_j\, |g_j|, \quad g \;=\; \nabla_\theta \log P_\theta(\hat{x
 
 $$t^* \;=\; \arg\max_t\, \bigl\| \partial f_\theta / \partial x_t \bigr\|_2$$
 
-(Display-math blocks render reliably on GitHub; inline `$...$` next to hyphens or `\text{}` sometimes does not — these results are written with both concerns in mind.)
+(Display-math blocks render reliably on GitHub; inline `$...$` next to hyphens or `\text{}` sometimes does not. These results are written with both concerns in mind.)
 
 ## Relation to prior work
 
@@ -71,10 +71,10 @@ $$t^* \;=\; \arg\max_t\, \bigl\| \partial f_\theta / \partial x_t \bigr\|_2$$
 
 **Do not support:**
 
-- The S<sub>L</sub>-vs-S<sub>supp</sub> split itself — untestable on weight-tied GPT-2.
-- Any claim about the full (S, T) minimal set — Phases 2–4 (growth, prune, verify) are not implemented.
-- Any claim of statistical significance — N = 17 is a sanity check, not a study.
-- Generalization to frontier-scale models — untested.
+- The S<sub>L</sub> vs S<sub>supp</sub> split itself. Untestable on weight-tied GPT-2.
+- Any claim about the full (S, T) minimal set. Phases 2 to 4 (growth, prune, verify) are not implemented.
+- Any claim of statistical significance. N = 17 is a sanity check, not a study.
+- Generalization to frontier-scale models. Untested.
 
 ## Immediate next steps
 
