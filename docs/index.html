@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A Joint Minimization Framework for Transformer Interpretability — Saqib Nazir Bhat</title>
+<meta name="author" content="Saqib Nazir Bhat">
+<meta name="description" content="Information Crystallization: a bottom-up algorithm for minimal-circuit discovery in transformer language models. Solo, independent research.">
+<meta name="keywords" content="transformer interpretability, mechanistic interpretability, AI safety, circuit discovery, lottery ticket hypothesis, ROME, residual stream">
+
+<script>
+window.MathJax = {
+  tex: {
+    inlineMath: [['$', '$'], ['\\(', '\\)']],
+    displayMath: [['$$', '$$'], ['\\[', '\\]']],
+    tags: 'ams'
+  },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+
+<style>
+:root {
+  --text: #1a1a1a;
+  --muted: #555;
+  --accent: #1a4a7a;
+  --rule: #ccc;
+  --bg: #fafafa;
+  --codebg: #f0f0f0;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+  font-size: 16.5px;
+}
+header {
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 1.2rem;
+  margin-bottom: 1.6rem;
+}
+h1 {
+  font-size: 1.9rem;
+  line-height: 1.25;
+  margin: 0 0 0.4rem;
+  font-weight: 600;
+}
+h1 em {
+  display: block;
+  font-size: 1.15rem;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 0.35rem;
+  font-style: italic;
+}
+.byline {
+  color: var(--muted);
+  font-size: 0.95rem;
+  margin-top: 0.4rem;
+}
+.byline a { color: var(--accent); }
+h2 {
+  font-size: 1.25rem;
+  margin-top: 2.4rem;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--rule);
+  color: var(--accent);
+  font-weight: 600;
+}
+h3 { font-size: 1.05rem; margin-top: 1.4rem; margin-bottom: 0.3rem; }
+p { margin: 0.7rem 0; }
+ul, ol { padding-left: 1.3rem; }
+li { margin: 0.3rem 0; }
+code {
+  background: var(--codebg);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  font-size: 0.92em;
+  font-family: "SFMono-Regular", Consolas, Menlo, monospace;
+}
+pre {
+  background: var(--codebg);
+  padding: 0.9rem 1rem;
+  border-radius: 5px;
+  overflow-x: auto;
+  font-size: 0.9em;
+  line-height: 1.45;
+}
+pre code { background: none; padding: 0; }
+blockquote {
+  margin: 1rem 0;
+  padding: 0.6rem 1.1rem;
+  border-left: 3px solid var(--accent);
+  background: #f3f6fa;
+  color: #333;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 1rem 0 0;
+}
+.links a {
+  display: inline-block;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-size: 0.92rem;
+}
+.links a:hover { background: var(--accent); color: white; text-decoration: none; }
+.abstract {
+  font-size: 0.98rem;
+  background: #fff;
+  padding: 1rem 1.2rem;
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  margin: 1.2rem 0;
+}
+.abstract strong { color: var(--accent); }
+.algorithm {
+  background: #fff;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.8rem 1.1rem;
+  margin: 1rem 0;
+  font-size: 0.95rem;
+}
+.algorithm .name {
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 0.35rem;
+}
+.note {
+  font-size: 0.88rem;
+  color: var(--muted);
+  border-top: 1px solid var(--rule);
+  margin-top: 3rem;
+  padding-top: 1rem;
+}
+footer {
+  margin-top: 3rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+.license-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  background: #eee;
+  border-radius: 3px;
+  font-size: 0.82rem;
+  color: #444;
+}
+</style>
+</head>
+<body>
+
+<header>
+<h1>A Joint Minimization Framework for Transformer Interpretability
+    <em>Information Crystallization</em></h1>
+<div class="byline">
+  <strong>Saqib Nazir Bhat</strong> &middot;
+  March 2026 &middot;
+  Independent research &middot;
+  <span class="license-badge">CC BY 4.0</span>
+</div>
+<div class="links">
+  <a href="paper.pdf">📄 PDF</a>
+  <a href="https://github.com/Saqibnazirbhat/information-crystallization">GitHub</a>
+  <a href="https://github.com/Saqibnazirbhat/information-crystallization/blob/main/paper.tex">LaTeX source</a>
+  <a href="#citation">Cite</a>
+</div>
+</header>
+
+<div class="abstract">
+<strong>Abstract.</strong>
+Transformer interpretability is usually posed as: identify the parameters and
+inputs responsible for a model's behaviour. Existing methods work top-down,
+searching the combinatorial space by ablation from the full model. I propose a
+different formulation. Given an observed output token $\hat{x}$, find the
+minimal $S \subseteq [d]$ and $T \subseteq [n]$ such that the argmax over the
+restricted model still equals $\hat{x}$. A single observation simplifies the
+problem: softmax does not affect argmax. Preserving the predicted token
+requires only that the logit margin $\delta$ remains positive, which is
+strictly weaker than matching the full distribution. Under this relaxation I
+introduce <em>Information Crystallization</em>, a bottom-up $O(k \cdot d)$
+algorithm (seed, greedy growth, prune) that finds local minima of $(S, T)$
+jointly. I decompose $S$ into a final-block component $S_L$ and a
+residual-stream support $S_{\text{supp}}$, connect the sparsity conjecture to
+the Lottery Ticket Hypothesis, and identify the $T$-dependence of $S^*$ as the
+central open problem. Empirical validation on GPT-2 is outlined but not yet
+conducted.
+</div>
+
+<h2>1. Problem</h2>
+
+<p>Let $V$ be a finite vocabulary and $X = (x_1, \ldots, x_n) \in V^n$ an input
+sequence. A language model parameterized by $\theta \in \mathbb{R}^d$ defines
+$$ P_\theta(x_{n+1} \mid x_1, \ldots, x_n) = \mathrm{softmax}\!\big(f_\theta(X)\big), $$
+where $f_\theta : V^n \to \mathbb{R}^{|V|}$ composes $L$ non-linear transformations
+$f_\theta = f_\theta^{(L)} \circ \cdots \circ f_\theta^{(1)}$. The predicted token is
+$\hat{x} = \arg\max_{v \in V} P_\theta(v \mid X)$.</p>
+
+<p><strong>Problem.</strong> Given $\hat{x}$, find minimal $S \subseteq [d]$ and
+$T \subseteq [n]$ with
+$$ \arg\max_{v \in V}\; P_{\theta_S}(v \mid X_T) \;=\; \hat{x}. $$
+$\theta_S$ denotes $\theta$ restricted to indices $S$; $X_T$ denotes $X$
+restricted to positions $T$. For $d \sim 10^{11}$ the problem is intractable
+in general. The next section weakens the preservation condition and makes it
+tractable under a sparsity assumption.</p>
+
+<h2>2. The Softmax Relaxation</h2>
+
+<p>Define the logit margin
+$$ \delta \;=\; f_\theta(X)[\hat{x}] \;-\; \max_{v \neq \hat{x}} f_\theta(X)[v]. $$
+The argmax condition is equivalent to $\delta > 0$. Softmax is strictly
+monotone, so preserving the argmax requires only preserving the
+<em>sign</em> of $\delta$ &mdash; no particular probability value needs to
+match. This is the key relaxation. A distribution-matching condition becomes
+a margin inequality.</p>
+
+<p>Most parameters do not determine the identity of the winning token: they
+refine losing-token probabilities, smooth the distribution, or encode
+features for positions outside $T$. A parameter $\theta_i$ is irrelevant to
+$\hat{x}$ if perturbing it changes $\delta$ by less than $\delta$ itself. The
+set of irrelevant parameters is large because $\delta > 0$ creates a
+$\delta$-wide buffer around the decision boundary.</p>
+
+<blockquote>
+<strong>Sufficient Condition.</strong>
+For all $\theta_i \notin S$,
+$\bigl| \mathrm{logit}_{\hat{x}}(\theta_S, X_T) - \mathrm{logit}_{\hat{x}}(\theta, X) \bigr| < \delta$.
+A proof via Lipschitz continuity of $f_\theta$ or a first-order perturbation
+bound would suffice.
+</blockquote>
+
+<h2>3. Information Crystallization</h2>
+
+<p>Top-down methods search $O(2^d)$ by ablating from $|S| = d$. I invert the
+direction of search: start with $|S| = 1$ and grow. If the true minimal set
+is small, growing finds it in time proportional to its size, not the model's.</p>
+
+<div class="algorithm">
+<div class="name">Algorithm: Information Crystallization</div>
+<ol>
+  <li>$g \gets \nabla_\theta \log P_\theta(\hat{x} \mid X)$</li>
+  <li>$S \gets \{\arg\max_j |g_j|\},\quad T \gets \{\arg\max_t \|\partial f_\theta / \partial x_t\|\}$</li>
+  <li><strong>while</strong> $\arg\max_v P_{\theta_S}(v \mid X_T) \neq \hat{x}$:
+    <ul>
+      <li>$\hat{g} \gets \nabla_\theta \log P_{\theta_S}(\hat{x} \mid X_T)$</li>
+      <li>$S \gets S \cup \{\arg\max_{j \notin S} |\hat{g}_j|\}$</li>
+    </ul>
+  </li>
+  <li><strong>for each</strong> $s \in S$: if argmax is preserved without $s$, drop $s$</li>
+  <li><strong>if</strong> argmax broken: <strong>goto</strong> 3</li>
+  <li><strong>return</strong> $(S, T)$</li>
+</ol>
+</div>
+
+<p>
+<strong>Complexity.</strong> Seed: $O(d)$. Each growth step:
+$O(|S|)$ for the restricted pass plus $O(d)$ to rank candidates via the
+gradient. After $k$ growth steps: $O(k \cdot d)$. Prune: $O(k)$ forward
+passes. Total $O(k \cdot d)$, tractable when $k \ll d$.
+</p>
+
+<p><strong>Three properties distinguish the approach.</strong></p>
+<ul>
+  <li><strong>Direction of search.</strong> Existing methods start from the full
+  model and remove components. This algorithm starts from empty and adds.</li>
+  <li><strong>Gradient-guided growth.</strong> Ranking $d$ candidates per step
+  would cost $O(d^2)$ total; using the restricted-subnetwork gradient as a
+  ranking heuristic reduces each step to $O(d)$.</li>
+  <li><strong>Joint optimization.</strong> $S$ and $T$ grow simultaneously,
+  capturing interactions between which parameters and which inputs matter.</li>
+</ul>
+
+<h2>4. Minimizing $T$</h2>
+
+<p>Let $\alpha^{h,\ell}(t)$ denote the attention weight on position $t$ from
+head $h$ at layer $\ell$. Define cumulative salience
+$\sigma(t) = \sum_{h,\ell} \alpha^{h,\ell}(t)$.
+For threshold $\varepsilon$ chosen so that positions with $\sigma(t) <
+\varepsilon$ contribute less than $\delta/2$ to the winning logit,
+$$ T_{\text{sal}} = \{\, t \in [n] : \sigma(t) > \varepsilon \,\}. $$
+I conjecture $T = \{x_{n-k}, \ldots, x_n\} \cup T_{\text{sal}}$ with $k \ll n$.</p>
+
+<p><strong>Failure modes of the suffix assumption.</strong> Transformers use
+global attention; a position-1 token with high $\sigma$ can dominate the
+logit landscape. Three concrete cases:</p>
+<ul>
+  <li><em>Sentence-initial negation.</em> &ldquo;Despite everything, the answer
+  is still&hellip;&rdquo; Position 1 reshapes the entire distribution.</li>
+  <li><em>Long-range syntactic dependencies.</em> The subject at positions
+  1&ndash;3 may determine verb form 20+ tokens later.</li>
+  <li><em>Named entities.</em> In &ldquo;Harry Potter picked up his&hellip;&rdquo;
+  the entity at positions 1&ndash;2 causes &ldquo;wand&rdquo; over &ldquo;phone&rdquo;.</li>
+</ul>
+<p>The corrected claim: $T$ is identified by attention weight concentration,
+not positional recency.</p>
+
+<h2>5. Minimizing $S$</h2>
+
+<p>I decompose $S = S_L \cup S_{\text{supp}}$: $S_L$ lives in the final
+transformer block and directly governs $\delta$ (unembedding projections for
+$\hat{x}$ and its nearest competitor, top-activating attention heads in the
+last layers, a small MLP set); $S_{\text{supp}}$ consists of earlier-layer
+parameters whose representations flow into $S_L$ via the residual stream
+[Elhage et al. 2021]. The contribution of $S_{\text{supp}}$ must satisfy
+$|\delta(S_L) - \delta(S_L \cup S_{\text{supp}})| < \delta/2$.</p>
+
+<p>Two external results support this decomposition. Frankle &amp; Carlin's
+<em>Lottery Ticket Hypothesis</em> establishes that dense networks contain
+sparse trainable subnetworks; the conjecture here is the inference-time
+analogue. Meng et al.'s <em>ROME</em> locates factual associations in
+middle-layer MLP modules, which means $S_{\text{supp}}$ can be substantially
+larger for factual recall than for syntactic continuation. Any empirical
+protocol must stratify by query type.</p>
+
+<h2>6. Coupling</h2>
+
+<p>$S$ and $T$ are not independently minimizable. When $T$ changes, the
+embeddings fed to layer 1 change; the perturbation propagates through all $L$
+layers via the residual stream; the set of load-bearing parameters in $S_L$
+shifts accordingly. Formally,
+$$ S^*(T) \;=\; \arg\min_S |S| \quad \text{s.t.} \quad \arg\max_v P_{\theta_S}(v \mid X_T) = \hat{x}. $$
+Treating $S$ and $T$ as independent is an approximation; its error is small
+only when $S_{\text{supp}}$ is small relative to $\delta$.</p>
+
+<blockquote>
+<strong>Open Problem.</strong> Characterize $T \mapsto S^*(T)$.
+(i) Bound $|S^*(T) - S^*(\theta, X)|$ as a function of $|T|$.
+(ii) Determine whether greedy decomposition is within a constant factor of
+the true joint minimum.
+</blockquote>
+
+<h2>7. Empirical Protocol (GPT-2)</h2>
+
+<p>GPT-2 is suitable for initial verification because its full parameters and
+attention weights are publicly accessible. <strong>The protocol below has not
+yet been executed.</strong></p>
+
+<ol>
+  <li><strong>Sampling.</strong> 1,000 sequences stratified by query type:
+  syntactic continuation, factual recall, negation-heavy, long-range syntactic
+  dependency.</li>
+  <li><strong>Baseline.</strong> Record $\hat{x}$ for each sequence under the
+  full model.</li>
+  <li><strong>$T$ identification.</strong> Greedily remove positions in
+  ascending order of $\sigma(t)$; record the minimal $T$ at which $\hat{x}$
+  flips.</li>
+  <li><strong>$S$ identification.</strong> Greedily ablate parameters in
+  ascending order of gradient sensitivity; record the minimal $S$ at which
+  $\hat{x}$ flips.</li>
+  <li><strong>Size measurement.</strong> Report $|S|/d$ and $|T|/n$ per query
+  type (mean, median, 90th percentile).</li>
+  <li><strong>Coupling test.</strong> Recompute $S^*(T)$ for each $T$ from
+  Step 3 and compare to $S^*(\theta, X)$.</li>
+</ol>
+
+<h2>8. Limitations</h2>
+<ul>
+  <li>The suffix approximation is not a theorem.</li>
+  <li>$|S_{\text{supp}}|$ is not formally bounded.</li>
+  <li>Greedy decomposition is suboptimal in general; the gap to the true joint
+  minimum is uncharacterized.</li>
+  <li>The Sufficient Condition is unproved.</li>
+  <li>GPT-2 results do not automatically generalize to frontier-scale models.</li>
+  <li>No empirical results &mdash; the protocol has not been executed.</li>
+</ul>
+
+<h2 id="citation">Citation</h2>
+<pre><code>@misc{bhat2026information,
+  author       = {Bhat, Saqib Nazir},
+  title        = {A Joint Minimization Framework for Transformer Interpretability},
+  year         = {2026},
+  month        = {March},
+  howpublished = {\url{https://github.com/Saqibnazirbhat/information-crystallization}},
+  note         = {Independent research}
+}</code></pre>
+
+<h2>References</h2>
+<ol>
+  <li>Elhage, N., Nanda, N., Olsson, C., et al. (2021).
+  <em>A Mathematical Framework for Transformer Circuits.</em> Anthropic.
+  <a href="https://transformer-circuits.pub/2021/framework/index.html">link</a></li>
+  <li>Frankle, J. &amp; Carbin, M. (2019). <em>The Lottery Ticket Hypothesis:
+  Finding Sparse, Trainable Neural Networks.</em> ICLR.</li>
+  <li>Meng, K., Bau, D., Andonian, A., &amp; Belinkov, Y. (2022).
+  <em>Locating and Editing Factual Associations in GPT.</em> NeurIPS.</li>
+  <li>Lei, T., Barzilay, R., &amp; Jaakkola, T. (2016).
+  <em>Rationalizing Neural Predictions.</em> EMNLP.</li>
+  <li>Bau, A., Belinkov, Y., Sajjad, H., et al. (2020).
+  <em>Identifying and Controlling Important Neurons in Neural Machine Translation.</em> ICLR.</li>
+  <li>Radford, A., Wu, J., Child, R., et al. (2019).
+  <em>Language Models are Unsupervised Multitask Learners.</em> OpenAI.</li>
+</ol>
+
+<footer>
+&copy; 2026 Saqib Nazir Bhat. Released under
+<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
+Research ideas, formulations, and results are the author's own; AI tools were
+used for English-language editing only.
+</footer>
+
+</body>
+</html>
