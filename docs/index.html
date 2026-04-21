@@ -177,6 +177,7 @@ footer {
 </div>
 <div class="links">
   <a href="paper.pdf">Paper (PDF)</a>
+  <a href="https://github.com/Saqibnazirbhat/information-crystallization/tree/main/experiments">Preliminary Results</a>
   <a href="resume.pdf">Author's CV</a>
   <a href="https://github.com/Saqibnazirbhat/information-crystallization">GitHub</a>
   <a href="https://github.com/Saqibnazirbhat/information-crystallization/blob/main/paper.tex">LaTeX source</a>
@@ -349,8 +350,15 @@ the true joint minimum.
 <h2>7. Empirical Protocol (GPT-2)</h2>
 
 <p>GPT-2 is suitable for initial verification because its full parameters and
-attention weights are publicly accessible. <strong>The protocol below has not
-yet been executed.</strong></p>
+attention weights are publicly accessible. <strong>Phase 1 (seed) has been run
+on N = 17 stratified sequences; phases 2–4 are not yet implemented.</strong>
+Preliminary findings are in
+<a href="https://github.com/Saqibnazirbhat/information-crystallization/blob/main/experiments/results.md">
+experiments/results.md</a>. On this small sample, the input-seed
+$t^*$ refuted the suffix-only heuristic (only 11.8% landed on the last token;
+long-range sequences clustered near the subject noun). The parameter-seed
+result was inconclusive on GPT-2 due to weight-tying between <code>wte.weight</code>
+and <code>lm_head.weight</code>; a clean $S_L$ test requires an untied model.</p>
 
 <ol>
   <li><strong>Sampling.</strong> 1,000 sequences stratified by query type:
