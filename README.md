@@ -15,9 +15,9 @@ Existing interpretability methods (activation patching, structured pruning, circ
 
 Given an observed output token $\hat{x}$, find the minimal parameter subset $S \subseteq [d]$ and input-position subset $T \subseteq [n]$ such that the argmax over the restricted model still equals $\hat{x}$. The central observation is that **softmax does not affect argmax**: preserving the predicted token requires only preserving the sign of the logit margin $\delta > 0$, not the full output distribution. This relaxation replaces a density-matching condition with a margin inequality, admitting substantially sparser solutions.
 
-Building on this relaxation, I introduce **Information Crystallization**: an $O(k \cdot d)$ algorithm that seeds with the single most gradient-sensitive parameter and input position, greedily grows $S$ and $T$ via restricted-subnetwork gradients, and iteratively prunes redundancies until a fixed point. I decompose $S$ into a final-block component $S_L$ and a residual-stream support $S_{\text{supp}}$, connecting the sparsity conjecture to the Lottery Ticket Hypothesis and to Elhage et al.'s residual-stream framework. I identify the $T$-dependence of $S^*$ as the primary open problem and specify a GPT-2 ablation protocol for empirical verification.
+Building on this relaxation, I introduce **Information Crystallization**: an $O(k \cdot d)$ algorithm that seeds with the single most gradient-sensitive parameter and input position, greedily grows $S$ and $T$ via restricted-subnetwork gradients, and iteratively prunes redundancies until a fixed point. I decompose $S$ into a final-block component $S_L$ and a residual-stream support $S_{\text{supp}}$, connecting the sparsity conjecture to the Lottery Ticket Hypothesis and to Elhage et al.'s residual-stream framework. I identify the $T$-dependence of $S^*$ as the primary open problem.
 
-Empirical validation on large-scale models has not yet been conducted.
+**Preliminary results** (seed phase, GPT-2 small, N = 17 stratified) refute the suffix-only heuristic for input-position seeding (only 11.8% of $t^*$ land on the last token; long-range sequences cluster near the subject noun). The parameter-seed result is inconclusive on GPT-2 because its input embedding and unembedding projection share one parameter tensor; a clean test of $S_L \cup S_{\text{supp}}$ requires untied architectures (Pythia, OPT). Growth and prune phases are unimplemented.
 
 ---
 
@@ -29,6 +29,8 @@ Empirical validation on large-scale models has not yet been conducted.
 | [`references.bib`](references.bib) | BibTeX bibliography |
 | [`docs/paper.pdf`](docs/paper.pdf) | Compiled PDF |
 | [`docs/index.html`](docs/index.html) | Web-rendered version with MathJax equations |
+| [`experiments/seed_phase.ipynb`](experiments/seed_phase.ipynb) | Preliminary empirical notebook (Phase 1 of the algorithm on GPT-2 small) |
+| [`experiments/results.md`](experiments/results.md) | Narrative report of seed-phase findings |
 | [`LICENSE`](LICENSE) | CC BY 4.0 |
 
 ## Live page
@@ -66,6 +68,6 @@ Or use [Overleaf](https://overleaf.com) — upload `paper.tex` and `references.b
 
 ## Authorship and provenance
 
-All mathematical formulations, algorithmic ideas, and theoretical claims in this repository are original work by Saqib Nazir Bhat. AI tools were used for English-language editing and LaTeX typesetting; the research content is the author's own. Git commit timestamps in this repository serve as evidence of authorship priority.
+The mathematical framework, algorithmic design, conjectures, and interpretive claims in this repository are original work by Saqib Nazir Bhat. AI tools were used for English-language editing, LaTeX typesetting, and scaffolding of the experimental notebook; all code was reviewed and run by the author. Git commit timestamps in this repository serve as evidence of authorship priority.
 
 Contact: saqibnazirbhat3@gmail.com

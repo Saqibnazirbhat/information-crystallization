@@ -42,7 +42,14 @@ than matching the full distribution. Under this relaxation I introduce
 decompose $S$ into a final-block component $S_L$ and a residual-stream support
 $S_{\text{supp}}$, connect the sparsity conjecture to the Lottery Ticket
 Hypothesis, and identify the $T$-dependence of $S^*$ as the central open
-problem. Empirical validation on GPT-2 is outlined but not yet conducted.
+problem. Preliminary results from the seed phase on GPT-2 small (N$=$17,
+stratified by query type) refute the suffix-only heuristic for input-position
+seeding; only $11.8\%$ of seed positions land on the last token, and
+long-range sequences cluster near the subject noun (mean distance 7.67 tokens
+from the end). The parameter-seed result is inconclusive on GPT-2 because its
+input embedding and unembedding projection share one parameter tensor;
+decisive evaluation of the $S_L \cup S_{\text{supp}}$ decomposition requires
+untied architectures. Growth and prune phases are unimplemented.
 \end{abstract}
 
 \section{Introduction}
@@ -68,15 +75,29 @@ it is the key lever for the rest of the paper.
         preservation condition (Section~\ref{sec:problem}).
   \item The \emph{softmax relaxation}: replacing distribution preservation with
         a margin inequality (Section~\ref{sec:relaxation}).
-  \item \emph{Information Crystallization}, a bottom-up $O(k\cdot d)$
-        algorithm with seed, growth, and prune phases
-        (Section~\ref{sec:algorithm}).
+  \item \emph{Information Crystallization}, a bottom-up algorithm with seed,
+        growth, and prune phases (Section~\ref{sec:algorithm}).
   \item A residual-stream decomposition $S = S_L \cup S_{\text{supp}}$
         (Section~\ref{sec:s-decomp}) and a formal statement of the coupling
         problem (Section~\ref{sec:coupling}).
-  \item An empirical protocol on GPT-2 for future validation
-        (Section~\ref{sec:protocol}).
+  \item An empirical protocol on GPT-2 together with preliminary seed-phase
+        results on $N{=}17$ stratified sequences (Section~\ref{sec:protocol}).
 \end{enumerate}
+
+\paragraph{Relation to prior work.} Information Crystallization is most
+closely related to attribution patching~\citep{syed2023attribution}, which
+also uses gradient approximations to circumvent the combinatorial cost of
+full ablation. The critical difference is direction: attribution patching
+scores every parameter once by its linearized ablation effect; Information
+Crystallization iteratively grows a set from a single seed. The two methods
+are complementary---attribution patching produces a dense importance map;
+Information Crystallization produces a minimal sufficient subset. Automated
+Circuit Discovery (ACDC)~\citep{conmy2023automated} is the canonical
+top-down baseline we contrast with. The bottom-up construction also echoes
+inference-time pruning methods such as SparseGPT~\citep{frantar2023sparsegpt}
+and Wanda~\citep{sun2023simple}, though those operate globally on the
+weight distribution rather than per-prediction. The gradient-attribution
+step builds on Integrated Gradients~\citep{sundararajan2017axiomatic}.
 
 \section{Problem Formulation}
 \label{sec:problem}
@@ -101,9 +122,23 @@ $T \subseteq [n]$ such that
 \begin{equation}
   \argmax_{v \in V} P_{\theta_S}(v \mid X_T) = \hat{x},
 \end{equation}
-where $\theta_S$ denotes $\theta$ restricted to indices $S$ (entries outside $S$
-set to zero or to a reference value), and $X_T$ denotes $X$ restricted to
-positions $T$.
+where $\theta_S$ denotes $\theta$ restricted to indices $S$ and $X_T$ denotes
+$X$ restricted to positions $T$.
+
+\paragraph{Operationalization of $\theta_S$.} Throughout this paper I take
+zero-ablation: entries outside $S$ are set to zero. This is the simplest
+commitment and is what Algorithm~\ref{alg:crystallize} evaluates. Alternative
+operationalizations---mean-ablation over a reference distribution, or
+activation-patching from a paired input---are compatible with the framework
+and in general yield different minimal $(S, T)$. The choice matters empirically:
+zero-ablation is conservative (it over-attributes because the network sees
+degenerate inputs it was never trained on), while mean-ablation is more
+permissive. Future work will compare all three.
+
+\paragraph{Tokenization.} $T$ is defined at the token level of the model's
+tokenizer (BPE for GPT-2). A BPE-split word therefore occupies multiple
+positions and may be partially selected. Claims about word-level salience
+must be recovered post-hoc from token-level $T$.
 
 In general, this problem is computationally intractable: $f_\theta$ is
 non-linear and non-invertible, and $d \sim 10^{11}$ for current
@@ -180,31 +215,42 @@ than the model's size.
 \State $g \gets \nabla_\theta \log P_\theta(\hat{x} \mid X)$
 \State $S \gets \{\argmax_j |g_j|\}$, \quad $T \gets \{\argmax_t \|\partial f_\theta / \partial x_t\|\}$
 \Comment{seed phase}
-\While{$\argmax_v P_{\theta_S}(v \mid X_T) \neq \hat{x}$}
-    \Comment{growth phase}
+\Repeat
+    \State \textit{Forward pass on restricted subnetwork:} evaluate $\argmax_v P_{\theta_S}(v \mid X_T)$.
+    \If{it equals $\hat{x}$} \textbf{break} \EndIf
     \State $\hat{g} \gets \nabla_\theta \log P_{\theta_S}(\hat{x} \mid X_T)$
+    \Comment{gradient w.r.t.\ \emph{all} $\theta$, not only $\theta_S$}
     \State $S \gets S \cup \{\argmax_{j \notin S} |\hat{g}_j|\}$
-\EndWhile
+\Until{$\argmax_v P_{\theta_S}(v \mid X_T) = \hat{x}$}
+\Comment{growth phase}
 \ForAll{$s \in S$}
     \Comment{crystallization phase}
     \If{$\argmax_v P_{\theta_{S \setminus \{s\}}}(v \mid X_T) = \hat{x}$}
         $S \gets S \setminus \{s\}$
     \EndIf
 \EndFor
-\If{argmax broken} \textbf{goto} line 3 \Comment{verification loop}
+\If{argmax no longer preserved after pruning} \textbf{goto line 3} \Comment{verification loop}
 \EndIf
 \State \Return $(S, T)$
 \end{algorithmic}
 \end{algorithm}
 
+\paragraph{Note on line 6.} The gradient $\hat{g}$ is taken with respect to
+the full parameter vector $\theta$, not $\theta_S$. Only the forward pass
+uses the restricted subnetwork. This is essential: to rank candidates
+$j \notin S$, the gradient component $\hat{g}_j$ must be defined for all
+$j \in [d]$.
+
 \subsection{Complexity}
 
-The seed phase costs one full backward pass, $O(d)$. Each growth step costs one
-forward--backward pass through the restricted subnetwork of size $|S|$, plus
-$O(d)$ to rank candidates via the gradient. After $k$ growth steps the total
-cost is $O(k \cdot d)$. The prune phase costs $O(k)$ forward passes. Compared
-to exhaustive search $O(2^d)$ or top-down pruning $O(d^2)$, this is tractable
-when $k = |S| \ll d$.
+The seed phase costs one full backward pass, $O(d)$. Each growth step costs a
+forward--backward pass through a restricted subnetwork of current size $|S|$
+plus a global ranking of candidates at cost $O(d)$. Summing over $k$ growth
+steps gives $O(k \cdot d + \sum_{i=1}^{k} i) = O(k \cdot d + k^2)$, which
+simplifies to $O(k \cdot d)$ when $k \ll \sqrt{d}$ (the regime of practical
+interest under the Sparse Explanation Hypothesis). The prune phase costs
+$O(k)$ forward passes. Compared to exhaustive search $O(2^d)$ or top-down
+pruning $O(d^2)$, this is tractable.
 
 \subsection{Why bottom-up}
 
@@ -256,7 +302,21 @@ approximation breaks in three concrete cases:
 \end{itemize}
 The corrected claim is: $T$ is identified by attention weight concentration,
 not by positional recency. The suffix approximation is a useful empirical
-heuristic but not a structural guarantee.
+heuristic but not a structural guarantee. I formalize the corrected claim:
+
+\begin{conjecture}[attention-concentration identification]\label{conj:attention}
+  For a minimal $T$ that preserves $\hat{x}$ under the restricted model,
+  every $t \in T$ satisfies $\sigma(t) > \varepsilon$ for a threshold
+  $\varepsilon$ determined by the decision boundary. In particular,
+  Conjecture~\ref{conj:suffix} is superseded: the suffix $\{x_{n-k}, \ldots, x_n\}$
+  is not structurally guaranteed to lie in $T$.
+\end{conjecture}
+
+Preliminary seed-phase data on GPT-2 small (Section~\ref{sec:protocol})
+is consistent with Conjecture~\ref{conj:attention}: the seed input position
+$t^*$ lies on the final token in only $11.8\%$ of sequences, and tracks the
+subject noun on long-range dependency queries. Conjecture~\ref{conj:suffix}
+remains in the paper as a deprecated reference point.
 
 \section{Minimizing $S$: Parameter Selection}
 \label{sec:s-decomp}
@@ -278,6 +338,20 @@ must satisfy
 \begin{equation}
   \bigl| \delta(S_L) - \delta(S_L \cup S_{\text{supp}}) \bigr| < \delta / 2.
 \end{equation}
+
+\paragraph{Weight-tying caveat.} Equation~(8) presumes that the unembedding
+projection and the input token-embedding matrix are distinct parameter
+tensors. This presumption fails on GPT-2 and many other pretrained models,
+which tie \texttt{lm\_head.weight} to \texttt{transformer.wte.weight}.
+On weight-tied models the $S_L \cup S_{\text{supp}}$ decomposition is
+ill-posed as stated: gradient flow through the unembedding projection and
+through the input embedding is indistinguishable at the level of the
+parameter tensor. The seed-phase experiment in Section~\ref{sec:protocol}
+exposes exactly this. A clean empirical test of the decomposition therefore
+requires either (a) an architecture with untied embeddings
+(e.g., Pythia, OPT), or (b) an experimental design that separately attributes
+gradient mass to the embedding-path and unembedding-path contributions to a
+shared tensor. Both are future work.
 
 \subsection{Lottery Ticket connection}
 
@@ -330,7 +404,10 @@ empirically verifiable.
 
 GPT-2~\citep{radford2019language} is suitable for initial verification because
 its full parameter set and attention weights are publicly accessible. I
-propose the following protocol.
+propose the following protocol and report preliminary seed-phase results
+in Section~\ref{sec:preliminary}.
+
+\subsection{Protocol}
 
 \begin{enumerate}
   \item \textbf{Sampling.} Draw 1{,}000 input sequences stratified by query
@@ -351,6 +428,59 @@ propose the following protocol.
         validates the greedy decomposition.
 \end{enumerate}
 
+\subsection{Preliminary seed-phase results}
+\label{sec:preliminary}
+
+I have run the seed phase (Step 1 of Algorithm~\ref{alg:crystallize}) on
+$N = 17$ hand-curated sequences stratified into four query types
+(syntactic continuation, factual recall, negation-heavy, long-range syntactic
+dependency). Sample size is a sanity check, not a statistical study.
+
+\paragraph{Input seed $t^*$.} Across the 17 sequences, only $11.8\%$
+($2/17$) had $t^*$ on the final input token. Mean distance of $t^*$ from
+the sequence end was $3.88$ tokens. Stratified:
+
+\begin{center}
+\begin{tabular}{lc}
+\toprule
+Query type & Mean distance of $t^*$ from end \\
+\midrule
+factual ($n{=}5$)    & 2.00 \\
+syntactic ($n{=}5$)  & 2.80 \\
+negation ($n{=}4$)   & 4.75 \\
+long-range ($n{=}3$) & \textbf{7.67} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+This is evidence---subject to the obvious caveat of small $n$, especially
+$n{=}3$ in the long-range bucket---consistent with
+Conjecture~\ref{conj:attention} (attention concentration, not suffix recency)
+and inconsistent with Conjecture~\ref{conj:suffix} (suffix only). On
+long-range sequences, $t^*$ lands on the subject noun rather than on any
+suffix position.
+
+\paragraph{Parameter seed $j^*$ (inconclusive due to weight-tying).}
+In $17/17$ sequences, the seed parameter tensor was
+\texttt{transformer.wte.weight}. This is uninformative for testing the
+$S_L \cup S_{\text{supp}}$ decomposition as discussed in
+Section~\ref{sec:s-decomp}: on GPT-2 this single tensor serves as both the
+input embedding and the unembedding projection. The result is consistent
+with the $S_L$ conjecture (unembedding $\in S_L$) but does not adjudicate
+between $S_L$ and the input embedding as the dominant direct-gradient path.
+
+\paragraph{A stronger reading.} The concentration of the direct gradient
+of $\log P(\hat{x} \mid X)$ on a single tensor suggests that the direct
+(unembedding-path) contribution to the winning logit dominates the
+residual-stream-mediated contribution in the seed step. If this holds
+more generally, $S_L$ is the empirically dominant component and
+$S_{\text{supp}}$ functions as a refinement, consistent with the paper's
+framing. An untied-architecture experiment is required to confirm.
+
+\paragraph{Implementation.} Available in the repository at
+\texttt{experiments/seed\_phase.ipynb} with full results in
+\texttt{experiments/results.md}.
+
 \section{Limitations}
 
 \begin{itemize}
@@ -369,8 +499,19 @@ propose the following protocol.
   \item \textbf{Scale.} Verification on GPT-2 does not guarantee
         generalization to models with $d \sim 10^{11}$. Distributed
         representations in large models may yield dense $(S, T)$.
-  \item \textbf{No empirical results.} The GPT-2 protocol in
-        Section~\ref{sec:protocol} has not been executed.
+  \item \textbf{Only the seed phase has been executed.} Growth, prune, and
+        verification phases of Algorithm~\ref{alg:crystallize} remain
+        unimplemented. Claims about the full minimal $(S, T)$ are therefore
+        untested.
+  \item \textbf{Weight-tying confound on GPT-2.} The preliminary $j^*$ result
+        cannot cleanly test the $S_L \cup S_{\text{supp}}$ decomposition
+        because GPT-2 ties input embedding and unembedding into a single
+        parameter tensor. An untied-architecture replication (e.g., Pythia,
+        OPT) is required.
+  \item \textbf{Sample size is not statistically significant.} The
+        $N{=}17$ seed-phase sample is a feasibility check. Scaling to
+        $N{\geq}1{,}000$ per query type with a permutation test on
+        positional distribution is the next quantitative milestone.
 \end{itemize}
 
 \section{Conclusion}
@@ -382,8 +523,10 @@ solutions, reachable via a bottom-up $O(k \cdot d)$ algorithm.
 
 The central open problem is the coupling between $S$ and $T$ through the
 residual stream. A formal perturbation bound on $f_\theta$ would turn the
-conjectures here into theorems. Empirical validation on GPT-2 is the next
-step and has not yet been conducted.
+conjectures here into theorems. Preliminary seed-phase results on GPT-2
+small are reported in Section~\ref{sec:preliminary} and
+\texttt{experiments/results.md}; growth and prune phases, and replication
+on an untied architecture, are the immediate next steps.
 
 \bibliographystyle{plainnat}
 \bibliography{references}

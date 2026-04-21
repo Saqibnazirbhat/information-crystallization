@@ -201,8 +201,13 @@ algorithm (seed, greedy growth, prune) that finds local minima of $(S, T)$
 jointly. I decompose $S$ into a final-block component $S_L$ and a
 residual-stream support $S_{\text{supp}}$, connect the sparsity conjecture to
 the Lottery Ticket Hypothesis, and identify the $T$-dependence of $S^*$ as the
-central open problem. Empirical validation on GPT-2 is outlined but not yet
-conducted.
+central open problem. Preliminary seed-phase results on GPT-2 small
+(N = 17, stratified) refute the suffix-only heuristic for input-position
+seeding; only 11.8% of seed positions land on the last token. The
+parameter-seed result is inconclusive on GPT-2 because its input embedding
+and unembedding projection share one parameter tensor; decisive evaluation
+of the $S_L \cup S_{\text{supp}}$ decomposition requires untied
+architectures. Growth and prune phases are unimplemented.
 </div>
 
 <h2>1. Problem</h2>
@@ -322,6 +327,14 @@ parameters whose representations flow into $S_L$ via the residual stream
 [Elhage et al. 2021]. The contribution of $S_{\text{supp}}$ must satisfy
 $|\delta(S_L) - \delta(S_L \cup S_{\text{supp}})| < \delta/2$.</p>
 
+<p><strong>Weight-tying caveat.</strong> The decomposition presumes the
+unembedding projection and input embedding are distinct parameter tensors.
+This fails on GPT-2 and many pretrained models, which tie <code>lm_head.weight</code>
+to <code>transformer.wte.weight</code>. On weight-tied architectures the
+decomposition is ill-posed as stated; the preliminary seed-phase result
+(Section&nbsp;7) exposes this directly. A clean test requires untied models
+(Pythia, OPT).</p>
+
 <p>Two external results support this decomposition. Frankle &amp; Carlin's
 <em>Lottery Ticket Hypothesis</em> establishes that dense networks contain
 sparse trainable subnetworks; the conjecture here is the inference-time
@@ -350,15 +363,47 @@ the true joint minimum.
 <h2>7. Empirical Protocol (GPT-2)</h2>
 
 <p>GPT-2 is suitable for initial verification because its full parameters and
-attention weights are publicly accessible. <strong>Phase 1 (seed) has been run
-on N = 17 stratified sequences; phases 2–4 are not yet implemented.</strong>
-Preliminary findings are in
+attention weights are publicly accessible. <strong>Phase 1 (seed) has been
+run on N = 17 stratified sequences; phases 2–4 are not yet implemented.</strong>
+Full results are in
 <a href="https://github.com/Saqibnazirbhat/information-crystallization/blob/main/experiments/results.md">
-experiments/results.md</a>. On this small sample, the input-seed
-$t^*$ refuted the suffix-only heuristic (only 11.8% landed on the last token;
-long-range sequences clustered near the subject noun). The parameter-seed
-result was inconclusive on GPT-2 due to weight-tying between <code>wte.weight</code>
-and <code>lm_head.weight</code>; a clean $S_L$ test requires an untied model.</p>
+experiments/results.md</a>.</p>
+
+<h3>Preliminary seed-phase results</h3>
+
+<p><strong>Input seed $t^*$.</strong> Only 11.8% of sequences placed $t^*$ on
+the last input token. Mean distance of $t^*$ from the end:</p>
+
+<table style="border-collapse: collapse; margin: 0.7rem 0;">
+<thead>
+<tr style="border-bottom: 1px solid #aaa;">
+  <th style="text-align:left; padding: 0.3rem 1rem;">Query type</th>
+  <th style="text-align:right; padding: 0.3rem 1rem;">Mean distance of $t^*$ from end</th>
+</tr>
+</thead>
+<tbody>
+<tr><td style="padding: 0.2rem 1rem;">factual (n=5)</td><td style="text-align:right; padding: 0.2rem 1rem;">2.00</td></tr>
+<tr><td style="padding: 0.2rem 1rem;">syntactic (n=5)</td><td style="text-align:right; padding: 0.2rem 1rem;">2.80</td></tr>
+<tr><td style="padding: 0.2rem 1rem;">negation (n=4)</td><td style="text-align:right; padding: 0.2rem 1rem;">4.75</td></tr>
+<tr><td style="padding: 0.2rem 1rem;"><strong>long-range (n=3)</strong></td><td style="text-align:right; padding: 0.2rem 1rem;"><strong>7.67</strong></td></tr>
+</tbody>
+</table>
+
+<p>This is consistent with the attention-concentration claim
+(Conjecture&nbsp;2) and inconsistent with the suffix-only conjecture. On
+long-range sequences, $t^*$ tracks the subject noun rather than any suffix
+position. Small $n$ — especially $n{=}3$ for long-range — is a caveat.</p>
+
+<p><strong>Parameter seed $j^*$ (inconclusive).</strong> In 17/17 sequences
+the seed parameter tensor was <code>transformer.wte.weight</code>. Because
+GPT-2 ties this to <code>lm_head.weight</code>, this is uninformative about
+the $S_L$ vs $S_{\text{supp}}$ split. A stronger reading: the concentration
+of direct-logit gradient on a single tensor suggests the direct
+(unembedding-path) contribution dominates the residual-stream-mediated
+contribution in the seed step — which, if it generalizes, means $S_L$ is
+the empirically dominant component.</p>
+
+<h3>Full protocol (for N ≥ 1,000)</h3>
 
 <ol>
   <li><strong>Sampling.</strong> 1,000 sequences stratified by query type:
@@ -386,7 +431,13 @@ and <code>lm_head.weight</code>; a clean $S_L$ test requires an untied model.</p
   minimum is uncharacterized.</li>
   <li>The Sufficient Condition is unproved.</li>
   <li>GPT-2 results do not automatically generalize to frontier-scale models.</li>
-  <li>No empirical results &mdash; the protocol has not been executed.</li>
+  <li><strong>Only the seed phase is executed.</strong> Growth, prune, and verification
+  phases of the algorithm remain unimplemented.</li>
+  <li><strong>Weight-tying confound on GPT-2.</strong> $j^*$ cannot cleanly test the
+  $S_L \cup S_{\text{supp}}$ decomposition. Untied-architecture replication
+  (Pythia, OPT) is required.</li>
+  <li><strong>Sample size N = 17</strong> is a feasibility check, not a
+  statistical study.</li>
 </ul>
 
 <h2 id="citation">Citation</h2>
@@ -414,13 +465,26 @@ and <code>lm_head.weight</code>; a clean $S_L$ test requires an untied model.</p
   <em>Identifying and Controlling Important Neurons in Neural Machine Translation.</em> ICLR.</li>
   <li>Radford, A., Wu, J., Child, R., et al. (2019).
   <em>Language Models are Unsupervised Multitask Learners.</em> OpenAI.</li>
+  <li>Sundararajan, M., Taly, A., &amp; Yan, Q. (2017).
+  <em>Axiomatic Attribution for Deep Networks.</em> ICML.</li>
+  <li>Conmy, A., Mavor-Parker, A. N., Lynch, A., Heimersheim, S., &amp;
+  Garriga-Alonso, A. (2023). <em>Towards Automated Circuit Discovery for
+  Mechanistic Interpretability.</em> NeurIPS.</li>
+  <li>Syed, A., Rager, C., &amp; Conmy, A. (2023). <em>Attribution Patching
+  Outperforms Automated Circuit Discovery.</em> NeurIPS Workshop.</li>
+  <li>Frantar, E. &amp; Alistarh, D. (2023). <em>SparseGPT: Massive Language
+  Models Can Be Accurately Pruned in One-Shot.</em> ICML.</li>
+  <li>Sun, M., Liu, Z., Bair, A., &amp; Kolter, J. Z. (2024). <em>A Simple
+  and Effective Pruning Approach for Large Language Models</em> (Wanda). ICLR.</li>
 </ol>
 
 <footer>
 &copy; 2026 Saqib Nazir Bhat. Released under
 <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
-Research ideas, formulations, and results are the author's own; AI tools were
-used for English-language editing only.
+The mathematical framework, algorithmic design, conjectures, and interpretive
+claims are the author's own. AI tools were used for English-language editing
+and for scaffolding the experimental notebook; all code was reviewed and run
+by the author.
 </footer>
 
 </body>
