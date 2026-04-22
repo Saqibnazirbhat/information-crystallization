@@ -27,7 +27,8 @@ I have run the seed phase of the algorithm on GPT-2 small (N = 17 stratified seq
 |------|-------------|
 | [`paper.tex`](paper.tex) | LaTeX source, full paper |
 | [`references.bib`](references.bib) | BibTeX bibliography |
-| [`docs/index.html`](docs/index.html) | Web-rendered version with MathJax equations (canonical) |
+| [`docs/paper.pdf`](docs/paper.pdf) | Compiled PDF (LaTeX) |
+| [`docs/index.html`](docs/index.html) | Web-rendered version with MathJax equations |
 | [`experiments/seed_phase.ipynb`](experiments/seed_phase.ipynb) | Preliminary Phase 1 notebook on GPT-2 small |
 | [`experiments/results.md`](experiments/results.md) | Seed-phase findings |
 | [`LICENSE`](LICENSE) | CC BY 4.0 |
