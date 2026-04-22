@@ -2,6 +2,8 @@
 
 **Information Crystallization.** A bottom-up algorithm for discovering minimal circuits in transformer language models.
 
+**Read it:** [saqibnazirbhat.github.io/information-crystallization](https://saqibnazirbhat.github.io/information-crystallization/) &nbsp;·&nbsp; [Paper PDF](docs/paper.pdf) &nbsp;·&nbsp; [Experiments](experiments/results.md)
+
 **Author:** Saqib Nazir Bhat
 **Date:** March 2026
 **Affiliation:** None. Solo, independent research.
@@ -32,11 +34,6 @@ I have run the seed phase of the algorithm on GPT-2 small (N = 17 stratified seq
 | [`experiments/seed_phase.ipynb`](experiments/seed_phase.ipynb) | Preliminary Phase 1 notebook on GPT-2 small |
 | [`experiments/results.md`](experiments/results.md) | Seed-phase findings |
 | [`LICENSE`](LICENSE) | CC BY 4.0 |
-
-## Live page
-
-Once GitHub Pages is enabled, the paper is viewable at:
-**https://saqibnazirbhat.github.io/information-crystallization/**
 
 ## Building the PDF
 
