@@ -9,3 +9,8 @@
 *.fls
 .DS_Store
 Thumbs.db
+
+# experiment outputs
+experiments/outputs/
+*.pyc
+__pycache__/

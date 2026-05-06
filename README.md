@@ -1,70 +1,65 @@
-# A Joint Minimization Framework for Transformer Interpretability
+# Information Crystallization
 
-**Information Crystallization.** A bottom-up algorithm for discovering minimal circuits in transformer language models.
+A bottom-up algorithm for **faithful, named, transferable** explanations of transformer predictions, via logit-margin budget allocation with online-faithfulness-gated growth.
 
-**Read it:** [saqibnazirbhat.github.io/information-crystallization](https://saqibnazirbhat.github.io/information-crystallization/) &nbsp;·&nbsp; [Paper PDF](docs/paper.pdf) &nbsp;·&nbsp; [Experiments](experiments/results.md)
-
-**Author:** Saqib Nazir Bhat
-**Date:** March 2026
-**Affiliation:** None. Solo, independent research.
-**License:** [CC BY 4.0](LICENSE)
+**Author:** Saqib Nazir Bhat &nbsp;·&nbsp; **License:** [CC BY 4.0](LICENSE) &nbsp;·&nbsp; **Contact:** saqibnazirbhat3@gmail.com
 
 ---
 
-## Abstract
+## What this is
 
-Existing interpretability methods (activation patching, structured pruning, circuit discovery) work top-down: they start with the full model and attempt to remove components until a minimal sufficient set remains. The search space is exponential in the model size. This paper reformulates the problem bottom-up.
+Existing circuit-discovery methods give partial answers — activation patching is faithful but unnamed; sparse feature circuits are named but post-hoc validate faithfulness; probes are fast but don't decompose the model. **Margin Crystallization** combines a margin-budget reformulation, an online faithfulness gate during growth, and first-class negative results into a single bottom-up procedure.
 
-Given an observed output token $\hat{x}$, find the minimal parameter subset $S \subseteq [d]$ and input-position subset $T \subseteq [n]$ such that the argmax over the restricted model still equals $\hat{x}$. The central observation is that **softmax does not affect argmax**: preserving the predicted token requires only preserving the sign of the logit margin $\delta > 0$, not the full output distribution. This relaxation replaces a density-matching condition with a margin inequality, admitting substantially sparser solutions.
+The full method is in **[`APPROACH.md`](APPROACH.md)**.
 
-Building on this relaxation, I introduce **Information Crystallization**: an $O(k \cdot d)$ algorithm that seeds with the single most gradient-sensitive parameter and input position, greedily grows $S$ and $T$ via restricted-subnetwork gradients, and iteratively prunes redundancies until a fixed point. I decompose $S$ into a final-block component $S_L$ and a residual-stream support $S_{\text{supp}}$, connecting the sparsity conjecture to the Lottery Ticket Hypothesis and to Elhage et al.'s residual-stream framework. I identify the $T$-dependence of $S^*$ as the primary open problem and specify a GPT-2 ablation protocol for empirical verification.
+## The four design choices
 
-I have run the seed phase of the algorithm on GPT-2 small (N = 17 stratified sequences) as a feasibility check. Only the seed step is tested. Growth and prune phases are future work. See [`experiments/results.md`](experiments/results.md).
+| Choice | Why |
+|---|---|
+| **Logit margin as a budget**, not argmax preservation | Continuous measure; works on noisy small models; gracefully degrades to partial explanations |
+| **Online faithfulness gate** during growth | Final S is faithful by construction; bidirectional necessity + sufficiency checked per accepted component |
+| **Counterfactual contrast prompts** (X, X') | Removes default-token wins; defines what "explain x̂" means precisely |
+| **Negative results as primary output** | When no sparse circuit exists, say so — the field underreports this |
 
----
+## Repo layout
 
-## Artifacts
-
-| File | Description |
-|------|-------------|
-| [`paper.tex`](paper.tex) | LaTeX source, full paper |
-| [`references.bib`](references.bib) | BibTeX bibliography |
-| [`docs/paper.pdf`](docs/paper.pdf) | Compiled PDF (LaTeX) |
-| [`docs/index.html`](docs/index.html) | Web-rendered version with MathJax equations |
-| [`experiments/seed_phase.ipynb`](experiments/seed_phase.ipynb) | Preliminary Phase 1 notebook on GPT-2 small |
-| [`experiments/results.md`](experiments/results.md) | Seed-phase findings |
-| [`LICENSE`](LICENSE) | CC BY 4.0 |
-
-## Building the PDF
-
-```bash
-pdflatex paper.tex
-bibtex paper
-pdflatex paper.tex
-pdflatex paper.tex
+```
+information-crystallization/
+├── README.md                   this file
+├── APPROACH.md                 method specification
+├── LICENSE                     CC BY 4.0
+└── experiments/
+    ├── README.md               experiments overview
+    ├── findings.md             preliminary results that motivated the design
+    ├── results.md              early notebook results on GPT-2
+    ├── seed_phase.ipynb        early seed-phase notebook
+    ├── test_strict.py          per-scalar test on GPT-2 small
+    ├── test_charitable.py      per-component test on Pythia-160M
+    └── test_directeffect.py    direct-effect test on Pythia-410M
 ```
 
-Or use [Overleaf](https://overleaf.com): upload `paper.tex` and `references.bib`.
+## Running the preliminary tests
 
----
+```bash
+pip install torch transformers numpy
+cd experiments
+python test_directeffect.py     # ~12 min, Pythia-410M, three metrics, direct-effect score
+```
 
-## Citation (BibTeX)
+These motivated the design; they are not the algorithm. The algorithm is in `APPROACH.md` and is the next implementation milestone.
+
+## Status
+
+Conceptual specification complete. Implementation roadmap (`APPROACH.md` §Implementation roadmap) starts at v0 on Pythia-410M with a small custom SAE; v1 targets Pythia-1.4B with Gemma Scope; v2 is a public leaderboard with baselines.
+
+## Citation
 
 ```bibtex
-@misc{bhat2026information,
+@misc{bhat2026margin,
   author       = {Bhat, Saqib Nazir},
-  title        = {A Joint Minimization Framework for Transformer Interpretability},
+  title        = {Information Crystallization: Faithful Bottom-up Circuit Discovery via Logit-Margin Allocation},
   year         = {2026},
-  month        = {March},
   howpublished = {\url{https://github.com/Saqibnazirbhat/information-crystallization}},
   note         = {Independent research}
 }
 ```
-
----
-
-## Authorship and provenance
-
-All mathematical formulations, algorithmic ideas, and theoretical claims in this repository are original work by Saqib Nazir Bhat. AI tools were used for English-language editing and LaTeX typesetting; the research content is the author's own. Git commit timestamps in this repository serve as evidence of authorship priority.
-
-Contact: saqibnazirbhat3@gmail.com
