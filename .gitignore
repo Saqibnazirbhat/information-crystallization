@@ -1,17 +1,9 @@
-*.aux
-*.log
-*.out
-*.toc
-*.bbl
-*.blg
-*.synctex.gz
-*.fdb_latexmk
-*.fls
 .DS_Store
 Thumbs.db
 
 # experiment outputs
 experiments/outputs/
+
+# python
 *.pyc
 __pycache__/
-
