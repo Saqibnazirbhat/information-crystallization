@@ -8,18 +8,7 @@ Saqib Nazir Bhat &nbsp;·&nbsp; Independent research &nbsp;·&nbsp; [CC BY 4.0](
 
 ## Paper
 
-[**Read the PDF**](paper.pdf) &nbsp;·&nbsp; [LaTeX source](paper.tex) &nbsp;·&nbsp; [bibliography](references.bib)
-
-Build from source:
-
-```bash
-pdflatex paper.tex
-bibtex paper
-pdflatex paper.tex
-pdflatex paper.tex
-```
-
-Tested with TeX Live 2026 (TinyTeX). Required packages: `geometry`, `amsmath`, `amssymb`, `amsthm`, `algorithm`, `algpseudocode`, `booktabs`, `hyperref`, `natbib`, `graphicx`, `xcolor`, `microtype` (with `cm-super` or `lmodern` for scalable fonts).
+[**Read the PDF**](paper.pdf)
 
 ## Abstract
 
@@ -32,9 +21,8 @@ As preliminary motivating evidence, three pilots on Pythia-410M show direct-effe
 ## Repo layout
 
 ```
-information-crystallization/
-├── paper.tex                      paper source
-├── references.bib                 46 entries
+margin-crystallization/
+├── paper.pdf                      the paper
 ├── README.md                      this file
 ├── LICENSE                        CC BY 4.0
 └── experiments/
@@ -63,7 +51,7 @@ Outputs land in `experiments/outputs/` (gitignored).
   author       = {Bhat, Saqib Nazir},
   title        = {Margin Crystallization: Faithful Bottom-up Circuit Discovery via Online-Gated Logit-Margin Allocation},
   year         = {2026},
-  howpublished = {\url{https://github.com/Saqibnazirbhat/information-crystallization}},
+  howpublished = {\url{https://github.com/Saqibnazirbhat/margin-crystallization}},
   note         = {Independent research}
 }
 ```
