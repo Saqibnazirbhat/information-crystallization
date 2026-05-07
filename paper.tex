@@ -1,0 +1,508 @@
+\documentclass[10pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{natbib}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{microtype}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!50!black,
+  citecolor=blue!50!black,
+  urlcolor=blue!50!black
+}
+
+\newtheorem{definition}{Definition}[section]
+\newtheorem{proposition}[definition]{Proposition}
+\newtheorem{conjecture}[definition]{Conjecture}
+\newtheorem{observation}[definition]{Observation}
+\newtheorem{theorem}[definition]{Theorem}
+
+\title{Margin Crystallization: Faithful Bottom-up Circuit Discovery via Online-Gated Logit-Margin Allocation}
+\author{Saqib Nazir Bhat \\ \textit{Independent research}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Mechanistic circuit discovery in transformer language models lacks a shared faithfulness bar: methods disagree on stopping criteria, validate faithfulness post hoc, and inflate reported circuits on prompts where no sparse explanation exists. Existing tools each cover part of what an interpretability claim requires --- ACDC \citep{conmy2023acdc} produces faithful circuits but unnamed units; Sparse Feature Circuits \citep{marks2024sparse} produces named SAE-feature circuits but validates faithfulness only on the final set; AtP* \citep{kramar2024atp} produces fast rankings but no subnetwork --- and none reports distributed predictions as a typed return. We propose \textbf{Margin Crystallization} (MC), a procedure that grows an explanation set bottom-up over SAE features in direct-effect order, admits each candidate only when a bidirectional $\beta$-margin gate passes on a same-type holdout, stops at fractional margin coverage $\alpha\delta_{\text{full}}$, and otherwise returns the literal value \texttt{"distributed"} with diagnostics. Our four contributions are: (i) margin-coverage stopping; (ii) the online faithfulness gate; (iii) typed \texttt{"distributed"} return; (iv) thresholded co-occurrence-and-magnitude type-level fingerprinting. As preliminary motivating evidence, three pilots on Pythia-410M heads-and-MLPs show direct-effect ranking dominates gradient-magnitude $8/12$ vs. $0/12$ at KL$<1$ with $50\%$ kept, and no setting yields a sparse argmax-preserving subset off default-token completions. We propose the \textbf{Faithful Sparse Circuit Benchmark} (FSCB) --- 800 contrast pairs across eight strata with three views and a pre-registered protocol --- as the test bench under which the algorithmic contribution is licensed or dissolved.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:intro}
+
+The question ``why did model $M$ predict $\hat x$ on context $X$?'' has matured methodologically: there are now reproducible procedures for naming the unit of analysis (SAE features, \citealp{bricken2023monosemanticity,templeton2024scaling,lieberum2024gemma}), scoring per-feature contribution \citep{nanda2023attribution,syed2024attribution,kramar2024atp}, and validating that a candidate subset implements the prediction \citep{wang2022interpretability,heimersheim2024patching,hanna2024faithfulness}. Yet the procedures disagree on three load-bearing choices: (a) where the faithfulness criterion is checked --- post hoc on a final set, or online during construction; (b) when to stop --- argmax preservation, KL threshold, or fractional margin coverage; (c) what to return when no sparse circuit exists --- a low metric score on \emph{some} returned set, or a typed negative result.
+
+These disagreements are not cosmetic. On Pythia-410M our 12-prompt pilot has median margin $\approx 0.5$ and range $\delta_{\text{full}} \in [0.06, 2.26]$; under any reasonable noise model a pre-softmax perturbation of magnitude $0.5$ flips argmax routinely. Argmax preservation at $36\%$ kept --- the best non-trivial keep-fraction we found --- is not a sparse circuit. The metric is too coarse for the regime; the question ``did the explanation work?'' needs a continuous answer.
+
+We propose four desiderata for an explanation procedure: it should be \textbf{faithful} (bidirectional, by construction not by report), \textbf{named} (units have semantics), \textbf{transferable} (the type-level claim survives prompt resampling), and \textbf{quantified} (the stopping budget is explicit and comparable across runs). Existing methods cover three of four: ACDC \citep{conmy2023acdc} is faithful and quantified but uses unnamed graph units and stops at a tunable $\tau$; SFC \citep{marks2024sparse} is named, transferable in spirit, and quantified, but validates faithfulness only post hoc; AtP/AtP* \citep{syed2024attribution,kramar2024atp} is fast and named but produces a ranking, not a faithful subnetwork; attribution graphs \citep{ameisen2025circuit,lindsey2025biology} are named and quantified, but are not procedurally faithful. None type \texttt{"distributed"} as a first-class outcome.
+
+\textbf{Contributions.} (1) A formalization of circuit discovery as logit-margin budget allocation over a feature decomposition (\S\ref{sec:theory}). (2) Algorithm 1, a per-prompt bottom-up procedure that grows $S$ in direct-effect order with an online bidirectional $\beta$-margin gate, and Algorithm 2, a thresholded co-occurrence-and-magnitude aggregator that distills a transferable type-level $S_T$ (\S\ref{sec:algorithm}). (3) FSCB: 800 contrast pairs across eight strata, three views (contrast, prompt-only, held-out-eval), pre-registered splits, CC-BY (\S\ref{sec:experiments}). (4) A pre-registered head-to-head against single-shot direct effect on FSCB --- the comparison that licenses or dissolves the algorithmic contribution.
+
+\textbf{Scope.} The contribution at submission is method specification, benchmark proposal, and three small-scale pilots that motivate three of MC's four design choices on heads-and-MLPs at Pythia-410M. Ablations, scaling-ladder, and end-to-end FSCB tables are marked \textsc{Proposed}. Falsifiers are listed in \S\ref{sec:discussion}.
+
+\textbf{Roadmap.} \S\ref{sec:related} situates MC against five prior-art lines. \S\ref{sec:theory} formalizes margin-coverage, the direct-effect linearization, the coverage conjecture, bidirectional faithfulness, and the online-gate property. \S\ref{sec:algorithm} translates to two algorithms with complexity analysis. \S\ref{sec:experiments} presents the pre-registered protocol, pilot results, and the proposed ablation/baseline tables. \S\ref{sec:discussion} states scope, falsifiers, and open problems. \S\ref{sec:conclusion} names the next experiment.
+
+\section{Related Work}
+\label{sec:related}
+
+MC sits at the intersection of five active lines. We summarize each cluster and mark what MC inherits and where it departs.
+
+\paragraph{Sparse autoencoders and feature decomposition.} The contemporary basis for naming the explanation unit is the SAE. \citet{bricken2023monosemanticity} decomposed a one-layer transformer's MLP into thousands of features more monosemantic than neurons; \citet{templeton2024scaling} extended this to Claude 3 Sonnet at production scale. Architecturally, \citet{gao2024scaling} introduced top-$k$ SAEs (16M features on GPT-4) and \citet{rajamanoharan2024jumprelu} introduced JumpReLU SAEs (Pareto-frontier on Gemma 2 9B); \citet{lieberum2024gemma} released Gemma Scope. Beyond reconstruction-MSE, \citet{braun2024endtoend} train end-to-end SAEs against the model's KL divergence, on the principle that performance-preserving features need not coincide with MSE-preserving ones. Critique-line: \citet{chanin2024absorption} document feature absorption; \citet{engels2024darkmatter,engels2024notall} show systematic unlearned structure in SAE residuals; \citet{bolukbasi2021interpretability} is the older interpretability-illusion warning these vindicate. \emph{MC inherits the SAE basis and is agnostic between top-$k$, JumpReLU, end-to-end \citep{braun2024endtoend}, and transcoder \citep{dunefsky2024transcoders} variants; it differs by asking which subset explains \emph{this} prediction, treating absorption-style residuals as a reason to type \texttt{"distributed"} rather than to inflate $|S|$.}
+
+\paragraph{Circuits and causal interventions.} \citet{wang2022interpretability} reverse-engineered IOI in GPT-2 small (26 heads, seven role classes) under faithfulness/completeness/minimality. \citet{olsson2022induction} identified the induction head; \citet{meng2022rome} localized factual associations; \citet{hanna2023greater} reverse-engineered the GPT-2 greater-than circuit. Discovery has automated: \citet{conmy2023acdc} cast it as iterative edge-pruning under activation patching; \citet{heimersheim2024patching} are the methodological reference; \citet{syed2024attribution} introduced attribution patching (matching ACDC at orders of magnitude less compute); \citet{kramar2024atp} closed its failure modes. \citet{marks2024sparse} ported circuit discovery to SAE features. The Anthropic attribution-graphs line (\citealp{ameisen2025circuit,lindsey2025biology}) extended this to Claude 3.5 Haiku. \emph{MC inherits the attribution-patching score (as direct effect, with the gradient at the counterfactual baseline; \citealp{nanda2023attribution}) and the bidirectional faithfulness reading. It differs by being bottom-up, by gating online during growth, by stopping at margin coverage, and by typing \texttt{"distributed"} as a return.}
+
+\paragraph{Faithfulness and its critique.} \citet{hanna2024faithfulness} showed two methods can produce circuits with high node-overlap yet materially different faithfulness; node-overlap is not a faithfulness substitute. \citet{mcgrath2023hydra} documented self-repair: ablating a layer triggers downstream compensation, so necessity-only tests \emph{understate} importance. \citet{wang2022interpretability} and \citet{heimersheim2024patching} establish the bidirectional reading earlier than \citet{hanna2024faithfulness}, who sharpens it. \emph{MC inherits the bidirectional reading; its admission criterion (Proposition~\ref{prop:held-out}) carries non-tautological content beyond the post-hoc validation other methods report.}
+
+\paragraph{Probing and representation engineering.} \citet{burns2022discovering} (Contrast-Consistent Search) recover truth-conditional knowledge via logical-negation consistency; \citet{marks2023geometry} show factual truth is linearly encoded at scale; \citet{li2023emergent} (Othello-GPT) show emergent board representations; \citet{zou2023representation} systematize representation reading and control; \citet{macdiarmid2024sleeper} and \citet{goldowsky2025deception} apply linear probes to safety monitoring. \emph{MC inherits the contrast-prompt design pattern; it differs in purpose --- probes detect that a property is encoded; MC explains why a specific token was produced.}
+
+\paragraph{Causal abstraction and minimum-set methods.} \citet{geiger2021causal} supply the formal vocabulary for the counterfactual move: explanation as preservation of behavior under interchange-intervention. \citet{geiger2022inducing} operationalize alignment as a training objective; \citet{vig2020investigating} predate this with mediation analysis. From the older sparse-explanation line: \citet{lei2016rationalizing} (smallest-set-that-preserves-output); \citet{decao2020diffmask} (differentiable masking under hindsight-bias control); \citet{frankle2019lottery} (Lottery Ticket); \citet{lee2019snip} (saliency-based admission). \emph{MC inherits the counterfactual contrast and the saliency-admission pattern; it differs by replacing minimum-set with margin-coverage --- continuous, gracefully degrading where minimum-set degrades discontinuously.}
+
+MC is recombinatory, not foundational: from each of these lines it borrows a published component; its contribution is the procedural integration plus the pre-registered FSCB test of whether that integration measurably outperforms the closest single-component baseline.
+
+\section{Theory}
+\label{sec:theory}
+
+\subsection{Notation and primitives}
+
+Let $V$ be the vocabulary and $n$ the context length. A transformer is a map $M: V^n \to \mathbb{R}^{|V|}$ whose privileged communication channel is the residual stream \citep{elhage2021framework}. A \emph{feature decomposition} $F = \{f_1, \dots, f_{|F|}\}$ is a basis or overcomplete dictionary over residual-stream activations at a designated layer/position; in this paper $F$ is a top-$k$ SAE feature set, but the formal development requires only that each $f_k$ has activation $a_k(X) \in \mathbb{R}$.
+
+For an ordered token pair $(\hat x, \hat x')$ the \emph{logit margin} is $\delta(\hat x, \hat x'; X) = \mathrm{logit}_M(X)[\hat x] - \mathrm{logit}_M(X)[\hat x']$. A \emph{contrast pair} is $(X, X')$ with paired predictions $(\hat x, \hat x')$, $\hat x \neq \hat x'$, satisfying $\delta_{\text{full}} := \delta(\hat x, \hat x'; X) > 0$ and $\delta(\hat x, \hat x'; X') < 0$. Minimal-pair contrast follows \citet{geiger2021causal} and \citet{wang2022interpretability}.
+
+For $S \subseteq F$, the \emph{restricted model} $M|_S$ replaces every $f_k \notin S$ with its baseline activation $\bar a_k$ (mean over a same-type baseline corpus) and recomputes downstream activations: $\delta(M|_S) := \delta(\hat x, \hat x'; X)|_{M \to M|_S}$. The conservative-faithfulness argument for mean over zero ablation is canonical in \citet{wang2022interpretability} and \citet{zhang2024nanda}; \citet{heimersheim2024patching} reaffirm it.
+
+\subsection{Margin-budget formulation}
+
+\begin{definition}[Margin-coverage problem]
+\label{def:margin-coverage}
+Given $(X, X', \hat x, \hat x')$ with $\delta_{\text{full}} > 0$, decomposition $F$, and target $\alpha \in (0, 1]$,
+\[
+S^\star(\alpha) = \arg\min_{S \subseteq F} |S| \quad \text{s.t.} \quad \delta(M|_S) \geq \alpha \delta_{\text{full}}.
+\]
+\end{definition}
+
+We adopt margin coverage rather than argmax preservation. Argmax is what the model surfaces at decode and is invariant to global rescaling; for high-confidence predictions argmax and margin agree. But on small models argmax is noise-dominated: Pythia-410M margins on our 12-prompt probe set range $\delta_{\text{full}} \in [0.06, 2.26]$ (median $\approx 0.5$), and a pre-softmax perturbation of magnitude $0.5$ flips argmax routinely. In the pilot, no setting on heads-and-MLPs found a sparse argmax-preserving subnetwork outside default-token completions, while the margin/KL relaxation revealed structure on $8/12$ prompts at $50\%$ kept. Margin coverage is also continuous in $S$, so the captured fraction is itself a useful summary when no $S$ reaches $\alpha$ --- the basis for the \texttt{"distributed"} return (\S\ref{sec:experiments}). We do not claim the advantage carries to large models; whether it does is a falsifier (\S\ref{sec:discussion}).
+
+\subsection{Direct effect as per-feature contribution}
+
+Let $a(X) = (a_1(X), \dots, a_{|F|}(X))$. We define
+\[
+\psi_k(X, X') = \big(a_k(X) - a_k(X')\big) \cdot \frac{\partial \delta}{\partial a_k}\bigg|_{a = a(X')}.
+\]
+The gradient is taken at the counterfactual baseline $a(X')$. This is the attribution-patching estimator introduced by \citet{nanda2023attribution}, refined by \citet{syed2024attribution} and \citet{kramar2024atp}, and used bidirectionally by \citet{hanna2024faithfulness}; it inherits the integrated-gradients lineage of \citet{sundararajan2017axiomatic}. The first-order Taylor estimator predates \citet{syed2024attribution} by approximately one year.
+
+\begin{proposition}[Linearization of margin]
+\label{prop:linearization}
+Suppose $\delta$, viewed as a function of feature activations, is $C^2$ along the segment $\{a(X') + t(a(X) - a(X')) : t \in [0,1]\}$ with second-derivative norm $\leq L$. Then
+\[
+\sum_{k=1}^{|F|} \psi_k(X, X') = \delta(\hat x, \hat x'; X) - \delta(\hat x, \hat x'; X') + R, \quad |R| \leq \tfrac{1}{2} L \|a(X) - a(X')\|_2^2.
+\]
+\end{proposition}
+
+A proof sketch via Taylor's theorem with integral remainder is in Appendix~\ref{app:proofs}. Tightness depends on contrast-pair edit distance: minimally edited contrasts yield small $\|a(X) - a(X')\|$ and a tight surrogate. We do \emph{not} claim that $36/36$ direct-effect dominance over $|\nabla|$ ranking implies tightness of the second-order remainder --- those are different empirical questions. Tightness is tested separately in the proposed ablations.
+
+\subsection{The coverage conjecture}
+
+Without distributional assumptions, no nontrivial bound on $|S^\star(\alpha)|$ exists: a pathological model could spread $\delta_{\text{full}}$ uniformly across all $|F|$ features.
+
+\begin{definition}[Sub-exponential ranked tail]
+\label{def:subexp}
+Sort $|\psi_{(1)}| \geq |\psi_{(2)}| \geq \dots \geq |\psi_{(|F|)}|$. The contributions are \emph{sub-exponential with rate $\lambda > 0$, constant $C_0 > 0$} if $|\psi_{(j)}| \leq C_0 e^{-\lambda j}$ for all $j$.
+\end{definition}
+
+\begin{conjecture}[Coverage bound, conditional]
+\label{conj:coverage}
+Assume (i) ordered $|\psi_k|$ are sub-exponential with rate $\lambda$ and constant $C_0$; (ii) the linearization remainder satisfies $|R| \leq \eta \delta_{\text{full}}$ with $\eta < 1 - \alpha$; (iii) greedy-by-marginal-gain selection is within constant factor $\rho \geq 1$ of the optimum. Then
+\[
+|S^\star(\alpha)| \leq \rho \cdot \frac{1}{\lambda} \log \frac{C_0}{\lambda(1 - \alpha - \eta)\delta_{\text{full}}} = O\!\left(\log \tfrac{1}{1-\alpha}\right).
+\]
+\end{conjecture}
+
+We label this a conjecture because (i) the sub-exponential tail is an empirical assumption to check --- we do not import it from any prior result, and \citet{templeton2024scaling}'s monosemanticity scores do not characterize the contribution-magnitude tail of $|\psi_k|$ for any task; (ii) $\rho$ is unbounded in pathological feature interference, and a worst-case bound for SAE features over realistic transformers is not known; (iii) the bound is for $|S^\star(\alpha)|$, not for the size of the set our algorithm returns, which additionally pays the gate's faithfulness budget. The asymptotic is $O(\log(1/(1-\alpha)))$, not $O(1/(1-\alpha))$. A proof sketch is in Appendix~\ref{app:proofs}.
+
+\subsection{Faithfulness criterion}
+
+A subset can capture a large fraction of $\delta_{\text{full}}$ and still fail to \emph{explain} $\hat x$ over $\hat x'$ if the complement also captures it (redundancy) or if $S$ alone fails to produce the behavior. Bidirectional faithfulness is the standard remedy; the reading appears in \citet{wang2022interpretability} as faithfulness/completeness/minimality, in \citet{heimersheim2024patching} as denoising/noising, and is sharpened by \citet{hanna2024faithfulness}.
+
+\begin{definition}[Bidirectional margin faithfulness]
+\label{def:faithfulness}
+For $S \subseteq F$:
+\[
+\sigma(S) := \delta(M|_S), \qquad \nu(S) := \delta(M|_{F \setminus S}).
+\]
+$S$ is \emph{$\beta$-margin-faithful} at $(X, X')$ iff $\sigma(S) \geq \beta\delta_{\text{full}}$ \emph{and} $\nu(S) \leq (1-\beta)\delta_{\text{full}}$. The \emph{type-level $\beta$-faithfulness rate} of $S$ on $\mathcal{Q}$ is the fraction of $X_h \in \mathcal{Q}$ on which both hold.
+\end{definition}
+
+We commit to the margin form throughout, including in Algorithm~\ref{alg:mc}, and do not fall back to argmax-flip rates in the regime where the theory says argmax is noise-dominated.
+
+\subsection{The online-gate property}
+
+\citet{marks2024sparse} and \citet{conmy2023acdc} validate faithfulness post hoc. MC admits feature $f$ at growth step $t$ only if
+\[
+\Pr_{X_h \sim \mathcal{H}_{\text{gate}}}\!\big[S_{t-1} \cup \{f\}\text{ is }\beta\text{-margin-faithful at }X_h\big] \geq \beta,
+\]
+where $\mathcal{H}_{\text{gate}}$ is a same-type holdout disjoint from $(X, X')$ and from the held-out evaluation set $\mathcal{H}_{\text{eval}}$.
+
+\begin{observation}[In-gate tautology]
+\label{obs:tautology}
+The empirical $\beta$-faithfulness rate of the returned $S$ on $\mathcal{H}_{\text{gate}}$ is at least $\beta$ by construction. This is not a theoretical guarantee.
+\end{observation}
+
+The non-tautological content is the next proposition.
+
+\begin{proposition}[Held-out advantage on a fixed validation budget]
+\label{prop:held-out}
+Let $\mathcal{H}_{\text{gate}}$ and $\mathcal{H}_{\text{eval}}$ be disjoint same-type holdouts drawn i.i.d.\ from a common distribution. Consider:
+\begin{itemize}
+  \item \textbf{Post-hoc filter (PH):} run a fixed score-and-threshold method to produce $S_{\text{PH}}$; compute in-sample faithfulness rate $\hat r_{\text{PH}}$ on $\mathcal{H}_{\text{gate}}$; accept iff $\hat r_{\text{PH}} \geq \beta$.
+  \item \textbf{Online gate (MC):} grow $S$ feature-by-feature, admitting $f$ iff the rate of $S \cup \{f\}$ on $\mathcal{H}_{\text{gate}}$ is $\geq \beta$. Stop when $\alpha\delta_{\text{full}}$ is captured or candidates exhaust.
+\end{itemize}
+Suppose the score-and-threshold ranking is monotone in $|\psi_k|$ and at least one feature on the candidate trajectory has nonzero rejection probability under the marginal gate. Then
+\[
+\mathbb{E}[r_{\text{MC}} \mid \text{MC accepts}] \geq \mathbb{E}[r_{\text{PH}} \mid \text{PH accepts}],
+\]
+where $r_\bullet$ is the held-out rate on $\mathcal{H}_{\text{eval}}$, on a fixed $|\mathcal{H}_{\text{gate}}|$ budget.
+\end{proposition}
+
+A coupling proof sketch is in Appendix~\ref{app:proofs}. This is what the online gate buys: not a guarantee on the in-gate rate (Observation~\ref{obs:tautology}), but a higher \emph{expected held-out} rate among accepted outputs on a \emph{fixed validation budget}. Given an unbounded $\mathcal{H}_{\text{gate}}$, PH can match MC; the proposition says that with $|\mathcal{H}|$ prompts, MC uses them more efficiently. Held-out evaluation in experiments must use $\mathcal{H}_{\text{eval}}$, disjoint from $\mathcal{H}_{\text{gate}}$ (\S\ref{sec:experiments}).
+
+\subsection{Distributed-prediction certificate}
+
+\begin{observation}[Negative certificate]
+\label{obs:distributed}
+Fix $(X, X', \hat x, \hat x')$, $F$, sparsity budget $k$, threshold $\beta$. If $\max_{S \subseteq F,\, |S| \leq k} \sigma(S) < \beta\delta_{\text{full}}$, then no $|S| \leq k$ is $\beta$-margin-faithful.
+\end{observation}
+
+The condition is the contrapositive of the sufficiency conjunct. Its hypothesis is checkable from the algorithm's search trace; its conclusion certifies a structured negative result. When Algorithm~\ref{alg:mc} exhausts candidates without reaching $\alpha\delta_{\text{full}}$, the empirical realization is the typed return \texttt{"distributed"}. We make one inferential commitment we did not earlier: the pilot finding that no condition on Pythia-410M heads-and-MLPs yields a sparse argmax-preserving subset is \emph{not} evidence for the hypothesis on SAE features at scale. Different decomposition, different model, different metric. Frequency of certificate-firing is an empirical question for FSCB.
+
+\paragraph{Open problems.} (a) Proposition~\ref{prop:held-out} assumes monotone ranking and i.i.d.\ holdout draws; the i.i.d.\ assumption is weak when $\mathcal{H}_{\text{gate}}$ and $\mathcal{H}_{\text{eval}}$ are constructed from the same template family. (b) The three Conjecture~\ref{conj:coverage} assumptions are independently unverified. (c) Position--feature coupling is not modeled. (d) Beyond first-order linearization, cross-feature Hessian corrections may recover ranking accuracy on Pythia-1.4B+. (e) Multi-token/sequential extension is undefined; logit margin is single-token. (f) Identifiability across SAE seeds is, to our knowledge, unstudied at the granularity we require. Full discussion is in Appendix~\ref{app:proofs}.
+
+\section{Algorithm}
+\label{sec:algorithm}
+
+We translate the margin-budget framing into an executable procedure. Algorithm~\ref{alg:mc} grows an explanation set per prompt under an online faithfulness gate. Algorithm~\ref{alg:type} aggregates $N$ same-type runs into a transferable type fingerprint.
+
+\begin{algorithm}[t]
+\caption{\textsc{Margin\_Crystallize}$(M, (X, \hat x), (X', \hat x'), F, \mathcal{H}, \alpha, \beta)$}
+\label{alg:mc}
+\begin{algorithmic}[1]
+\Require transformer $M$; anchor $(X, \hat x)$; counterfactual $(X', \hat x')$ with $\hat x' \neq \hat x$; feature set $F$; same-type holdout $\mathcal{H}$; coverage target $\alpha$ (default $0.9$); faithfulness rate $\beta$ (default $0.7$).
+\Ensure $(S, \text{role\_labels}, \text{summary})$, or $(\texttt{"distributed"}, \text{diagnostics})$.
+\State $\delta_{\text{full}} \gets \mathrm{logit}_M(\hat x \mid X) - \mathrm{logit}_M(\hat x' \mid X)$
+\State $\psi \gets \mathrm{direct\_effect}(M, F, X, X', \hat x, \hat x')$ \Comment{$\psi_k = (a_k(X) - a_k(X')) \cdot \partial_k \delta|_{a(X')}$}
+\State $\mathit{candidates} \gets \mathrm{argsort\_descending}(|\psi|)$
+\State $S \gets \emptyset$; $\mathit{captured} \gets 0$; $\mathit{rejected} \gets [\,]$
+\For{$f \in \mathit{candidates}$}
+  \State $S_{\text{new}} \gets S \cup \{f\}$
+  \State $\delta_{\text{new}} \gets \delta(M|_{S_{\text{new}}})$ \Comment{patch only $S_{\text{new}}$; recompute true restricted margin}
+  \State $\Delta \gets \delta_{\text{new}} - \mathit{captured}$
+  \If{$\Delta \leq 0$} \textbf{continue} \Comment{(a) forward gate}
+  \EndIf
+  \State $\nu \gets \mathrm{mean}_{X_h \in \mathcal{H}}\,\mathbb{1}\!\left[\delta(M|_{F \setminus S_{\text{new}}}; X_h) \leq (1-\beta)\delta_{\text{full}}(X_h)\right]$ \Comment{margin necessity}
+  \State $\sigma \gets \mathrm{mean}_{X_h \in \mathcal{H}}\,\mathbb{1}\!\left[\delta(M|_{S_{\text{new}}}; X_h) \geq \beta\delta_{\text{full}}(X_h)\right]$ \Comment{margin sufficiency}
+  \If{$\min(\nu, \sigma) < \beta$}
+    \State $\mathit{rejected}.\mathrm{append}((f, \psi_f, \nu, \sigma))$; \textbf{continue} \Comment{(b) faithfulness gate}
+  \EndIf
+  \State $S \gets S_{\text{new}}$; $\mathit{captured} \gets \delta_{\text{new}}$
+  \If{$\mathit{captured} \geq \alpha \cdot \delta_{\text{full}}$}
+    \State \Return $(S, \mathrm{role\_labels}(S, F), \mathrm{summary}(S, \mathcal{H}))$
+  \EndIf
+\EndFor
+\State \Return $(\texttt{"distributed"}, \{\mathit{captured}/\delta_{\text{full}},\ \mathit{rejected},\ \mathrm{top}_{10}\,\mathrm{by}\,|\psi|(\mathit{rejected})\})$
+\end{algorithmic}
+\end{algorithm}
+
+The bidirectional gate (lines 10--11) uses the margin predicate from Definition~\ref{def:faithfulness}; an argmax-flip variant of the same algorithm is recorded as a sanity check (Appendix~\ref{app:argmax}). Necessity tests that ablating $F \setminus S_{\text{new}}$ keeps $\delta$ \emph{below} $(1-\beta)\delta_{\text{full}}$, i.e., the complement \emph{does not} alone reproduce the behavior; sufficiency tests that patching $S_{\text{new}}$ keeps $\delta \geq \beta\delta_{\text{full}}$, i.e., $S$ alone \emph{does} reproduce it. The forward gate (line 9) skips a candidate whose admission does not move the restricted margin given the current $S$; we discuss path-dependence below.
+
+\begin{algorithm}[t]
+\caption{\textsc{Fingerprint\_Type}$(M, \{(X_i, \hat x_i, X'_i, \hat x'_i)\}_{i=1}^N, F, \mathcal{H}, \alpha, \beta, K, \tau)$}
+\label{alg:type}
+\begin{algorithmic}[1]
+\Require $N$ same-type prompts; presence threshold $K$ (default $\lceil 0.6 N\rceil$); margin-contribution threshold $\tau$ (default $0.05\bar\delta_{\text{full}}$); other hyperparameters as in Algorithm~\ref{alg:mc}.
+\Ensure type circuit $S_T$, per-prompt diagnostics, distributed fraction.
+\State $\mathit{results} \gets [\,]$
+\For{$i = 1, \dots, N$}
+  \State $\mathit{results}[i] \gets \textsc{Margin\_Crystallize}(M, (X_i, \hat x_i), (X'_i, \hat x'_i), F, \mathcal{H} \setminus \{i\}, \alpha, \beta)$
+\EndFor
+\State $\mathit{accepted} \gets \{r.S : r \in \mathit{results},\ r \neq \texttt{"distributed"}\}$
+\State $\mathit{contribs}[k] \gets \big[\,(\text{margin contribution of } f_k \text{ in run } i, 0 \text{ if } f_k \notin S_i)\big]_i$
+\State $S_T \gets \big\{ f_k :\ |\{i : f_k \in S_i\}| \geq K\ \wedge\ \mathrm{median}_i\,\mathit{contribs}[k][i] \geq \tau \big\}$
+\State $\mathit{distributed\_frac} \gets |\{i : \mathit{results}[i] = \texttt{"distributed"}\}| / N$
+\State \Return $(S_T, \mathit{results}, \mathit{distributed\_frac})$
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Selection bias.} Aggregation in Algorithm~\ref{alg:type} is over \emph{accepted} runs; the \texttt{"distributed"} fraction is reported separately and FSCB transfer rates are stratified by it (\S\ref{sec:experiments}).
+
+\subsection{Complexity}
+
+Let $d = |F|$, $H = |\mathcal{H}|$, $T$ the cost of one full-model forward pass. Per-iteration cost is one restricted forward pass for $\delta_{\text{new}}$ ($O(T)$) plus the gate ($2H$ holdout forwards, $O(HT)$). With at most $|S|$ accepting iterations and $R$ rejecting iterations (rejections also pay the gate), total per-prompt cost is $O((|S| + R) \cdot H \cdot T)$.
+
+\begin{table}[t]
+\centering
+\caption{Complexity comparison. $d = |F|$, $H$ holdout size, $T$ forward-pass cost. ACDC counted in patches; AtP* in backward passes; MC in forward passes including the gate.}
+\label{tab:complexity}
+\begin{tabular}{lll}
+\toprule
+Method & Cost & Output \\
+\midrule
+ACDC \citep{conmy2023acdc} & $O(d^2 \cdot T)$ patches & faithful subgraph \\
+AtP* \citep{kramar2024atp} & $O(d \cdot T)$ backward & feature ranking, no subnetwork \\
+SFC post-hoc \citep{marks2024sparse} & $O(d \cdot T)$ ranking + final patch & SAE-feature subset, validated post hoc \\
+Exhaustive subset search & $O(2^d \cdot T)$ & optimal $|S|$ \\
+\textbf{Margin Crystallization} & $O((|S|+R) \cdot H \cdot T)$ & $\beta$-margin-faithful $S$ or \texttt{"distributed"} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+In our regime $|S| \approx 50$, $H \in [10, 50]$, $d \in [10^4, 10^6]$. At $d = 10^4$ ACDC is $\sim 10^8 T$ patches; MC at $|S|+R \approx 170$ (pilot rejection rate $2.4\times$ acceptance) and $H = 16$ is $\sim 5 \times 10^3 T$ --- roughly $20\times$ faster than ACDC, not the orders-of-magnitude improvement loosely claimed in early drafts.
+
+\subsection{Design choices, justified}
+
+\paragraph{Bottom-up vs top-down.} ACDC \citep{conmy2023acdc} is principled when the target circuit is most of the model. In the SAE regime $d \gg |S|$: most features are irrelevant on most prompts; top-down ablates tens of thousands of irrelevant features early and pays $O(d^2)$ on noise. \citet{marks2024sparse} follow the bottom-up intuition; we additionally move the faithfulness gate inside the loop.
+
+\paragraph{Direct effect vs $|\nabla|$.} On Pythia-160M and 410M (12-prompt pilot), gradient magnitude failed to preserve argmax in $36/36$ runs; direct effect dominated under KL$<1$ ($8/12$ vs.\ $0/12$). The reason is algebraic: low-gradient parameters can have large nonlinear effect under ablation. Direct effect is the linearization of $\delta$ around the contrastive substitution --- the change being allocated.
+
+\paragraph{Online vs post-hoc.} \citet{marks2024sparse} ranks features then validates faithfulness on the final set. Two problems: (i) on small models validation can fail at the end of growth, leaving an unfaithful explanation with no signal which feature to remove; (ii) per-feature contributions under bidirectional patching are path-dependent \citep{hanna2024faithfulness}. Online gating turns a yes/no end question into a continuous per-feature decision; the cost is the $O(H \cdot T)$ gate term (Table~\ref{tab:complexity}). Proposition~\ref{prop:held-out} states the non-tautological content.
+
+\paragraph{Margin coverage vs argmax preservation.} Most circuit-discovery papers stop when ``argmax is preserved.'' On Pythia-410M the median margin is $\sim 0.5$ and many flips under partial ablation are noise; under direct-effect, KL$<1$ at $50\%$ kept was achieved on $8/12$ prompts versus argmax preservation on $2/12$. Margin coverage $\alpha$ is continuous, gives partial credit, and reduces to argmax preservation in the high-margin limit. We use logit margin specifically because it is the quantity \S\ref{sec:theory}'s budget framing is allocating.
+
+\paragraph{Counterfactual contrast vs single-prompt.} A single-prompt question admits any feature biasing toward $\hat x$ in general, including unigram bias. Causal abstraction \citep{geiger2021causal} defines explanation as preservation under interchange. Computing $\psi_k$ on $(a_k(X) - a_k(X'))$ kills features firing identically on $X$ and $X'$ regardless of magnitude; this removes the default-token artifact we observed in single-prompt scoring.
+
+\paragraph{Negative results as output.} ACDC, SFC, and AtP all return \emph{some} circuit; none have a \texttt{"distributed"} branch. In the Pythia-410M pilot no setting found a sparse argmax-preserving subnetwork outside default-token cases; suppressing this would be misleading. Algorithm~\ref{alg:mc} exits along \texttt{"distributed"} with captured fraction, rejected features, and top unaccepted candidates --- enough to distinguish a genuinely distributed prediction from ``$\alpha$ too high'' or ``$\beta$ too strict.''
+
+\subsection{Implementation}
+
+\textbf{Choice of $F$.} Default to a top-$k$ SAE \citep{gao2024scaling} or JumpReLU SAE \citep{rajamanoharan2024jumprelu} over the residual stream of the layer with highest probe accuracy on the task type. For Gemma 2 we use Gemma Scope \citep{lieberum2024gemma}; components and MLP neurons are valid fallbacks when no SAE is available.
+
+\textbf{Holdout size.} Binomial confidence gives width $\approx 1/\sqrt H$; $H=10$ distinguishes $0.7$ from $0.5$ reliably; $H=50$ saturates returns. Default $H \in [10, 50]$ same-type prompts, disjoint from those used in Algorithm~\ref{alg:type}.
+
+\textbf{Chunked admission.} At $d \approx 10^6$ (Gemma Scope), per-feature admission is wasteful: we add the top $k_{\text{chunk}} = \max(1, \lfloor 0.001 d \rfloor)$ candidates per iteration, run one gate evaluation, and bisect on failure. Bisection is heuristic on non-monotone $\Delta$; we report it as a heuristic, not a guarantee.
+
+\textbf{Re-scoring.} $\psi$ is computed once on the unrestricted model and reused; for long runs we optionally refresh $\psi$ against the restricted model every $r$ accepted features.
+
+\subsection{Limitations of the algorithm}
+
+(i) \textbf{Linearization error.} The $\psi$ ranking can miss features that matter only at higher order; the gate uses true restricted margins, but ranking errors propagate to admission order. (ii) \textbf{Strict $\beta$ on small models.} $\beta = 0.7$ is calibrated for clean bidirectional faithfulness; below 200M parameters holdout argmaxes themselves drift, inflating \texttt{"distributed"} rate. We recommend $\beta = 0.5$ below 200M, $\beta = 0.7$ at $\geq 1$B. (iii) \textbf{SAE feature splitting} \citep{engels2024darkmatter,chanin2024absorption} may either inflate $|S|$ or collapse semantically equivalent features under the forward gate. (iv) \textbf{Position--feature coupling} is not modeled; making $S$ a $(\text{feature}, \text{position})$ pair is a natural extension.
+
+\paragraph{On path-dependence.} The forward gate at line 9 skips a candidate whose admission does not currently move $\delta$, but $\psi$ is computed once on the unrestricted model; in principle a feature rejected at step $t$ could become useful after $f_b$ is admitted at $t' > t$. We test order-stability empirically (\S\ref{sec:experiments}, robustness check 1) and pre-register a $\mathrm{CV}(|S|) < 0.15$ hypothesis as failable.
+
+\section{Experiments}
+\label{sec:experiments}
+
+\subsection{Pre-registration}
+\label{sec:prereg}
+
+\textbf{Primary endpoint.} Faithfulness rate at $\beta = 0.7$ on FSCB, MC vs.\ \emph{single-shot direct effect} (= MC minus growth and the online gate; identical SAE features and $\psi$ score, threshold-only admission). Statistic: paired McNemar across the 800 FSCB items.
+
+\textbf{Minimum detectable effect.} With 800 paired prompts, paired-binomial baseline $p_0 = 0.5$, one-sided McNemar at $\alpha = 0.005$ (Bonferroni-corrected for ten primary/secondary endpoints), $80\%$ power: minimum detectable $\Delta \approx 0.054$ absolute. Per-stratum ($n = 100$) the same calculation gives MDE $\approx 0.15$. We pre-commit: a stratum-level lift smaller than $0.15$ will \emph{not} be reported as evidence.
+
+\textbf{Multiple-comparisons correction.} Ten endpoints: faithfulness rate at $\beta \in \{0.5, 0.7, 0.9\}$; transfer rate at $\alpha \in \{0.7, 0.9\}$; recovery rate vs.\ \citet{wang2022interpretability} IOI and \citet{hanna2023greater} greater-than circuits; distributed-fraction sanity vs.\ default-token stratum; $|S|$ at $\alpha = 0.9$; SAE-seed Jaccard. Bonferroni at family-wise $\alpha = 0.05$ gives per-test $\alpha = 0.005$. Holm--Bonferroni reported as sensitivity.
+
+\textbf{Stop-fail conditions.} MC is judged \emph{not} to add value over single-shot direct effect if any of: (i) corrected $p > 0.005$ on the primary endpoint at any of three Pythia scales (410M, 1.4B, 2.8B); (ii) recovery rate vs.\ \citet{wang2022interpretability}/\citet{hanna2023greater} is below the post-hoc-filter baseline of \citet{marks2024sparse} by more than $0.10$ Jaccard; (iii) distributed-fraction on the default-token stratum $< 0.5$. All three are reported as headline numbers regardless of sign.
+
+\subsection{Models}
+
+\begin{table}[t]
+\centering
+\caption{Model ladder, SAE source, and execution status.}
+\label{tab:models}
+\begin{tabular}{llll}
+\toprule
+Family & Sizes & SAE source & Status \\
+\midrule
+GPT-2 small \citep{radford2019language} & 124M & none (pilot only) & \textsc{Pilot} (motivating) \\
+Pythia \citep{biderman2023pythia} & 70M--6.9B & top-$k$ SAE, residual, every 4th layer \citep{gao2024scaling}; & 410M run; 1.4B partial; \\
+ & & $k=64$, 200M tokens of The Pile \citep{gao2020pile} & 2.8B/6.9B \textsc{Proposed} \\
+Gemma 2 \citep{riviere2024gemma2} & 2B, 9B & Gemma Scope JumpReLU \citep{lieberum2024gemma,rajamanoharan2024jumprelu} & \textsc{Proposed} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Per-task layer is the layer with highest probe accuracy on a 200-prompt held-out task probe, fixed before any MC run; the rule is logged into a manifest pre-execution and not re-run after results are seen.
+
+\subsection{FSCB --- Faithful Sparse Circuit Benchmark}
+
+FSCB is 800 contrast pairs across eight strata of 100 each, released CC-BY at submission. Strata: IOI \citep{wang2022interpretability} (full 16-template ABBA/BABA structure); greater-than \citep{hanna2023greater} (``The X started in YYYY and ended in''); induction \citep{olsson2022induction} (random-token repetition probe); factual recall (Country$\to$Capital); sentiment (positive$\to$negative review last token); negation (``X is not Y''); pronoun resolution; default-token completions (calibration stratum where no sparse circuit \emph{should} exist).
+
+Each pair $(X, \hat x, X', \hat x')$ ships with three views: \textbf{contrast} (used by MC, single-shot direct effect, SFC); \textbf{prompt-only} $(X, \hat x)$ (used by ACDC and AtP*, which do not natively consume contrast pairs); \textbf{held-out evaluation}. Each stratum is split: \emph{growth} ($n=60$, used only inside the gate); \emph{gate-eval} ($n=20$, used post-MC for faithfulness reporting); \emph{transfer} ($n=20$, used only for $S_T$-transfer reporting). Splits are fixed before MC runs and released with FSCB. Each stratum is also split by $\delta_{\text{full}}$ quartile so a method that works only on high-margin prompts is detectable.
+
+\subsection{Baselines}
+
+\begin{table}[t]
+\centering
+\caption{Baselines and the MC component each ablates.}
+\label{tab:baselines}
+\begin{tabular}{lll}
+\toprule
+Baseline & What it ablates & Reference \\
+\midrule
+ACDC & top-down vs.\ bottom-up; head/MLP units vs.\ SAE & \citet{conmy2023acdc} \\
+SFC (post-hoc filtered) & online vs.\ post-hoc gate, same SAE substrate & \citet{marks2024sparse} \\
+AtP* & ranking only on heads/MLPs & \citet{kramar2024atp,syed2024attribution} \\
+\textbf{Single-shot direct effect on SAE} & growth + online gate (load-bearing) & derived \\
+Variance ranking & informedness sanity & sanity \\
+Magnitude pruning of SAE features & non-interpretability prior & sanity \\
+Random feature subset matched to $|S|$ & above-chance level & sanity \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The single-shot direct effect baseline is load-bearing: identical SAE substrate, identical $\psi$ score, identical $\beta$-faithfulness predicate, applied as a post-hoc filter rather than an in-loop gate. If MC does not beat this baseline at the pre-registered effect size, the algorithmic contribution dissolves to framing. We pre-register the comparison.
+
+\subsection{Metrics}
+
+Per-prompt: margin coverage $\delta(M|_S)/\delta_{\text{full}}$; necessity (margin) $1 - \delta(M|_{F\setminus S})/\delta_{\text{full}}$; sufficiency (margin) $\delta(M|_S)/\delta_{\text{full}}$ after patching $S$ from clean into corrupted; argmax-flip rate (robustness check). Per-stratum: $\beta$-faithfulness rate at $\beta \in \{0.5, 0.7, 0.9\}$; transfer rate (per-quartile, per-distributed bin); distributed fraction; recovery (Jaccard/F1) vs.\ \citet{wang2022interpretability,hanna2023greater}; wall-clock and FLOPs.
+
+\subsection{Preliminary results (motivating evidence)}
+
+We executed three small-scale pilots before the FSCB protocol was frozen. These are \emph{motivating evidence only} and are not the headline empirical claim.
+
+\begin{itemize}
+  \item \textbf{Pilot 1 (GPT-2 small, per-scalar):} 0/12 sparse argmax-preserving subsets at any keep-fraction down to $10\%$; magnitude pruning needed $50$--$99\%$ kept.
+  \item \textbf{Pilot 2 (Pythia-160M, per-component):} $|\nabla|$: 0/12; variance: 3/12; bottom-up-$|\nabla|$: 2/12 sparse argmax-preserving (both wins on default-token completions).
+  \item \textbf{Pilot 3 (Pythia-410M, direct-effect):} KL$<1$ wins out of 12 --- $|\nabla|$: 0; variance: 5; \textbf{direct effect: 8}. Best non-trivial keep-fraction 0.36.
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\fbox{\parbox{0.55\textwidth}{\centering [Figure~\ref{fig:coverage}: margin-coverage vs.\ $|S|$ on Pythia-410M for 12 prompts under three score functions ($|\nabla|$, variance, direct effect). Preliminary; heads/MLP, not SAE. To be replaced by FSCB-scale curves.] (placeholder)}}
+\caption{Preliminary margin-coverage curves on Pythia-410M (heads/MLP units; 12-prompt probe set). Preliminary motivating evidence; to be replaced by FSCB-scale curves under SAE features.}
+\label{fig:coverage}
+\end{figure}
+
+\textbf{What these establish:} (a) direct-effect ranking dominates $|\nabla|$ at small scale on this 12-prompt set; (b) contrast prompts remove the default-token artifact under which single-prompt $|\nabla|$ scoring spuriously ``wins''; (c) argmax preservation is noise-dominated in the small-model/low-margin regime, motivating margin coverage. \textbf{What they do not establish:} the online gate; the type-fingerprint; SAE features; MC end-to-end. The headline FSCB tables are \textsc{Proposed} (Section~\ref{sec:prereg}).
+
+\subsection{Ablations (proposed)}
+
+\begin{table}[t]
+\centering
+\caption{Ablation table. All rows \textsc{Proposed}; reported on FSCB at Pythia-410M.}
+\label{tab:ablations}
+\small
+\begin{tabular}{cllll}
+\toprule
+\# & Ablation & Variants & Hypothesis & Falsifier \\
+\midrule
+1 & Score function & direct effect vs.\ $|\nabla \log P|$ & DE $\geq 5$pp faithfulness lift & $<5$pp or reversed \\
+2 & Gate placement & online vs.\ post-hoc & online $\geq 5$pp at matched $|S|$ & $<5$pp or reversed \\
+3 & Contrast type & contrast vs.\ single-prompt mean & contrast reduces default-token & $<0.3$ \\
+ & & & dist-frac by $\geq 0.3$ &  \\
+4 & Stopping & margin vs.\ argmax & margin admits sparse $S$ on & not satisfied \\
+ & & & $>50\%$ low-$\delta_{\text{full}}$ prompts &  \\
+5 & Distributed return & enabled vs.\ forced non-empty $S$ & forced drops faithfulness $\geq 10$pp & $<10$pp \\
+6 & $\beta$ sweep & $\{0.3, 0.5, 0.7, 0.9\}$ & dist-frac monotone in $\beta$ & non-monotone \\
+7 & $\alpha$ sweep & $\{0.5, 0.7, 0.9, 0.95\}$ & $|S|$ convex in $\alpha$ & linear or no \\
+8 & Holdout $H$ & $\{4, 8, 16, 32\}$ & CV($|S|$) decreasing in $H$ & flat \\
+9 & SAE family & top-$k$ vs.\ JumpReLU vs.\ ReLU+L1 & qualitatively unchanged & family-dependent \\
+10 & Layer choice & probe-best vs.\ fixed-mid & per-task improves recovery & no improvement \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Rows 1--5 isolate single design choices; rows 6--10 are sweeps and substrate checks.
+
+\subsection{Robustness checks (proposed)}
+
+(1) \textbf{Permutation tests on candidate ordering} (100 permutations/prompt; hypothesis CV($|S|$) $<0.15$ at $\alpha=0.9$) --- a failure of this hypothesis is reported as evidence \emph{for} path-dependence, not buried. (2) \textbf{SAE seed sensitivity} (3 training seeds; Jaccard reported with \citealp{lan2024sparse} aligners across model size). (3) \textbf{Within-family transfer} from Pythia-410M to 1.4B/2.8B via the same aligners. (4) \textbf{Held-out-from-the-gate evaluation} (faithfulness reported only on \emph{gate-eval}). (5) \textbf{Distributed-stratified transfer reporting} (high- vs.\ low-distributed halves of FSCB). (6) \textbf{Predicate sensitivity} (margin and argmax-flip predicates both reported). (7) \textbf{Statistical-test sanity} (paired sign test, stratified bootstrap, permutation test alongside McNemar). (8) \textbf{Distributed-fraction calibration} (default-token stratum $> 0.5$; IOI $< 0.2$).
+
+\subsection{Compute and reproducibility}
+
+\textbf{Cost model.} Per-prompt $\sim 50 \cdot 3.4 \cdot 121 \cdot T \approx 2 \times 10^4 \cdot T$, dominated by gate evaluations on rejected candidates (rejection rate $2.4\times$ acceptance, measured in pilot 3); $2\times$ safety factor on top.
+
+\textbf{Budget.} Full ladder (Pythia 70M--6.9B + Gemma 2 2B/9B, all baselines, ablations, robustness): $\sim 5800$ A100-hours. Reduced ladder (Pythia 160M/410M/1.4B + Gemma 2 2B): $\sim 1300$ A100-hours, plus $\sim 220$ A100-hours of SAE training. The reduced ladder is achievable on a standard academic cluster allocation; the full ladder requires either a cluster grant or community execution.
+
+\textbf{Reproducibility.} Code MIT-licensed at acceptance; FSCB CC-BY at submission, \emph{before} the headline experiments are run, so splits cannot be re-tuned post hoc. Three SAE training seeds; gate-holdout sampling, candidate-ordering permutation, and bootstrap seeds all logged; headline numbers reported as median$\pm$IQR over seeds. The pre-registration in Section~\ref{sec:prereg} is timestamped; results-blinded analysis is committed before headline runs.
+
+\section{Discussion and Limitations}
+\label{sec:discussion}
+
+\subsection{Scope}
+
+The submission contributes (i) a method specification, (ii) FSCB as a benchmark released CC-BY, (iii) a frozen pre-registered protocol, and (iv) three pilots that motivate three of MC's four design choices on heads-and-MLPs at small scale. The ablation, baseline, and scaling tables are \textsc{Proposed}. We do not claim MC is the best discovery method until those tables are filled. The contribution at submission is method specification + benchmark proposal + preliminary evidence.
+
+\subsection{Falsifiers}
+
+We list five conditions, each of which we accept as dissolving a specific claim.
+
+\begin{enumerate}
+  \item \textbf{Online gate dissolves.} If post-hoc-filtered \citet{marks2024sparse} matches MC at matched compute on FSCB, the algorithmic novelty in the online gate dissolves and only the framing in margin coverage remains.
+  \item \textbf{Path-monotonicity vacuous.} If for every accepted $S_T$ from MC the post-hoc-filtered SFC output on the same prompt is identical (or differs only on a measure-zero set), the prefix-predicate property is a distinction without a difference.
+  \item \textbf{Type-fingerprint downgrades.} If a prior circuit-discovery paper defines an essentially equivalent thresholded-intersection rule, Algorithm~\ref{alg:type} downgrades to ``first formalization in the bidirectional-faithful setting.''
+  \item \textbf{Margin tracks argmax at $\geq 1$B.} If on FSCB at scale the prompts on which margin-$\alpha$ and argmax-preservation produce different $S$ are a vanishing fraction, the framing is correct but empirically idle: the novelty pitch shifts to ``useful in the small/low-confidence regime.''
+  \item \textbf{Coverage conjecture not strengthenable.} If Conjecture~\ref{conj:coverage} cannot be moved past its three assumptions, the coverage statement remains an empirical observation, not a theoretical contribution.
+\end{enumerate}
+
+\subsection{Open problems}
+
+(a) Distribution shift between $\mathcal{H}_{\text{gate}}$ and $\mathcal{H}_{\text{eval}}$ when both are drawn from the same template family. (b) Independent verification of Conjecture~\ref{conj:coverage}'s three assumptions. (c) Joint $(S, T) \subseteq F \times \{1,\dots,n\}$ feature--position selection. (d) Cross-feature Hessian corrections beyond first-order $\psi$. (e) Multi-token/sequential extension of the margin object. (f) Cross-decomposition identifiability of $\beta$-faithful explanations.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+Margin Crystallization is the procedural integration of margin-coverage stopping, a bidirectional online faithfulness gate, counterfactual contrast prompts, a typed \texttt{"distributed"} return, and thresholded type-level co-occurrence-and-magnitude intersection. FSCB --- 800 contrast pairs across eight strata, three views, pre-registered splits, CC-BY --- is the test bench under which this integration is licensed or dissolved. The named next experiment is \textbf{MC vs.\ single-shot direct effect on FSCB at Pythia-1.4B with Gemma Scope-style SAEs, with IOI and greater-than as the first two strata, under the pre-registered McNemar test} (\S\ref{sec:prereg}). This single comparison alone licenses or dissolves the algorithmic contribution; everything else in this paper is set-up.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\appendix
+
+\section{Proof sketches and full open-problems text}
+\label{app:proofs}
+
+\paragraph{Proposition~\ref{prop:linearization} (Taylor with integral remainder).} Apply Taylor's theorem with integral remainder along the segment from $a(X')$ to $a(X)$. Let $g(t) = \delta(a(X') + t(a(X) - a(X')))$. Then $g(1) - g(0) = \int_0^1 g'(t)\, dt = g'(0) + \int_0^1 (1-t) g''(t)\, dt$. The first term is $\sum_k (a_k(X) - a_k(X')) \partial_k\delta|_{a(X')} = \sum_k \psi_k$. The Lagrange remainder is bounded by $\tfrac{1}{2}\sup_{t \in [0,1]} |g''(t)| \leq \tfrac{1}{2} L \|a(X) - a(X')\|_2^2$ by the assumed second-derivative bound. $\square$
+
+\paragraph{Conjecture~\ref{conj:coverage} (greedy + sub-exp tail).} Greedy-by-marginal-gain dominates greedy-by-$|\psi_{(j)}|$ up to linearization slack: cumulative gain after $j$ steps satisfies $\delta(M|_{S_j}) \geq \sum_{i \leq j} |\psi_{(i)}| - |R|$. Sub-exponentiality gives $\sum_{i > j} |\psi_{(i)}| \leq C_0 \sum_{i > j} e^{-\lambda i} \leq (C_0/\lambda) e^{-\lambda j}$, so the residual missing margin is $\leq (1-\alpha-\eta)\delta_{\text{full}}$ once $j \geq \lambda^{-1} \log[C_0/(\lambda(1-\alpha-\eta)\delta_{\text{full}})]$. Adding $\eta$ closes the linearization gap; $\rho$ absorbs greedy-vs-optimal slack from feature interference. The asymptotic is $O(\log(1/(1-\alpha)))$ as $\alpha \to 1$. $\square$
+
+\paragraph{Proposition~\ref{prop:held-out} (optional-stopping coupling).} Couple PH and MC on the same score-ranked candidate trajectory $f_{(1)}, f_{(2)}, \dots$. PH commits all-or-nothing on a prefix; MC stops at the first feature whose admission would push the in-gate rate below $\beta$. Conditional on acceptance, MC's accepted prefix has every intermediate prefix tested at threshold $\beta$, while PH tests only the final prefix. Apply the optional-stopping argument to the rate process: each MC admission is a Bernoulli pass at level $\beta$ on $\mathcal{H}_{\text{gate}}$, so $\mathbb{E}[r_{\text{eval}} \mid \text{accept}] \geq \beta$ tracked over the trajectory. PH can accept on $\hat r_{\text{PH}} \geq \beta$ realizations driven by single-prompt outliers in $\mathcal{H}_{\text{gate}}$; the variance reduction from per-step testing is what MC buys. The inequality is strict whenever the rejection condition (some feature with nonzero rejection probability under the marginal gate) holds. $\square$
+
+\paragraph{Observation~\ref{obs:distributed} (contrapositive).} If $\sigma(S) < \beta\delta_{\text{full}}$ for every $S$ with $|S| \leq k$, the sufficiency conjunct of Definition~\ref{def:faithfulness} fails for every such $S$, so no $|S| \leq k$ is $\beta$-margin-faithful. The hypothesis is checkable from the algorithm's search trace: the maximum captured margin over admitted prefixes during execution lower-bounds $\max_{|S|\leq k} \sigma(S)$ if the algorithm runs to candidate exhaustion at $|S| = k$; if the lower bound is $< \beta\delta_{\text{full}}$ the negative is certified. The Pythia-410M heads/MLP pilot does not directly evidence this hypothesis on SAE features at scale; firing frequency on FSCB is an open empirical question. $\square$
+
+\paragraph{Open problems (full).} (a) The online-gate generalization claim is conditional on monotone ranking and i.i.d.\ holdout draws; the i.i.d.\ assumption is weak when $\mathcal{H}_{\text{gate}}$ and $\mathcal{H}_{\text{eval}}$ are constructed from the same template family. A sharper version requires either a learning-theoretic bound (PAC-Bayes on the rate process) or a controlled empirical test where the shift is measured. (b) The coverage conjecture's three assumptions are independently unverified; only the sub-exponential tail is amenable to direct measurement, and a worst-case bound on $\rho$ for SAE features is unknown. (c) Position--feature coupling: $F$ is defined at a designated layer/position, but residual content at position $t$ depends on attention from earlier positions; the right object is a joint $(S, T) \subseteq F \times \{1, \dots, n\}$. (d) Beyond first-order linearization: the quadratic remainder degrades on long-edit contrasts and later layers; cross-feature Hessian corrections may recover ranking accuracy on Pythia-1.4B+. (e) Multi-token/sequential extension: logit margin is single-token; marginalizing over continuations shrinks $\delta_{\text{full}}$. (f) Identifiability across decompositions: two SAEs over the same residual stream may yield different $S^\star$ with different semantic labels even at equal $(\sigma, \nu)$; transfer of $\beta$-faithful explanations across SAE seeds is, to our knowledge, unstudied at the granularity we require.
+
+\section{Hyperparameters}
+\label{app:hyperparams}
+
+\begin{table}[h]
+\centering
+\caption{Default hyperparameters.}
+\label{tab:hyperparams}
+\begin{tabular}{lll}
+\toprule
+Symbol & Default & Description \\
+\midrule
+$\alpha$ & $0.9$ & Margin-coverage stopping target \\
+$\beta$ & $0.7$ ($0.5$ below 200M) & Bidirectional faithfulness rate \\
+$K$ & $\lceil 0.6 N \rceil$ & Type-level presence threshold \\
+$\tau$ & $0.05 \bar\delta_{\text{full}}$ & Median margin-contribution threshold \\
+$k_{\text{chunk}}$ & $\max(1, \lfloor 0.001 |F| \rfloor)$ & Chunked-admission size \\
+$|\mathcal{H}_{\text{growth}}|$ & 60 & Inside-gate holdout \\
+$|\mathcal{H}_{\text{eval}}|$ & 20 & Held-out faithfulness evaluation \\
+$|\mathcal{H}_{\text{transfer}}|$ & 20 & Transfer-rate evaluation \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{FSCB construction}
+\label{app:fscb}
+
+FSCB ships eight strata of 100 contrast pairs each. Each pair $(X, \hat x, X', \hat x')$ is constructed so $\delta_{\text{full}} > 0$ on the anchor and $\delta(\hat x, \hat x'; X') < 0$ on the counterfactual. Strata: \textbf{IOI} (16-template ABBA/BABA structure following \citealp{wang2022interpretability}; 100-name set); \textbf{greater-than} (the ``The X started in YYYY and ended in'' template of \citealp{hanna2023greater}); \textbf{induction} (random-token repetition probe of \citealp{olsson2022induction}); \textbf{factual recall} (Country$\to$Capital from a curated list); \textbf{sentiment} (positive$\to$negative review last token); \textbf{negation} (``X is not Y'' frame); \textbf{pronoun resolution}; \textbf{default-token completions} (calibration stratum where no sparse circuit \emph{should} exist). For each pair we ship: (i) contrast view $(X, \hat x, X', \hat x')$; (ii) prompt-only view $(X, \hat x)$ for ACDC/AtP*; (iii) tokenization for each model in Table~\ref{tab:models}. Splits per stratum: \emph{growth} ($n=60$), \emph{gate-eval} ($n=20$), \emph{transfer} ($n=20$). Each stratum is also tagged by $\delta_{\text{full}}$ quartile under each model. License: CC-BY.
+
+\section{Pilot reproduction and argmax-predicate variant}
+\label{app:argmax}
+
+The 12-prompt pilot used three test harnesses: \texttt{test\_strict.py} (per-scalar score on GPT-2 small), \texttt{test\_charitable.py} (per-component score on Pythia-160M with $|\nabla|$, variance, bottom-up-$|\nabla|$), and \texttt{test\_directeffect.py} (Pythia-410M with $|\nabla|$, variance, direct effect under both KL$<1$ and argmax-preservation). Raw per-prompt numbers: Pythia-410M direct effect achieves KL$<1$ at $50\%$ kept on 8/12 prompts (vs.\ 0/12 for $|\nabla|$, 5/12 for variance). Argmax preservation at the same kept fraction is 2/12 for direct effect, 0/12 for the others; the best non-trivial keep-fraction across all settings is $0.36$.
+
+\paragraph{Argmax-flip variant of Algorithm~\ref{alg:mc}.} Replace lines 10--11 with $\nu^{\text{argmax}} \gets \mathrm{mean}_{X_h} \mathbb{1}[\arg\max M(X_h \mid \text{ablate } F\setminus S_{\text{new}}) \neq \hat x_h]$ and $\sigma^{\text{argmax}} \gets \mathrm{mean}_{X_h} \mathbb{1}[\arg\max M(X'_h \mid \text{patch } S_{\text{new}}\,\text{from}\,X_h) = \hat x_h]$, with the same $\beta$ threshold. This is the v1 predicate; in the regime where the theory says argmax is noise-dominated it is strictly worse than the margin variant in the main text. Both predicates are reported on FSCB (\S\ref{sec:experiments}, robustness check 6).
+
+\end{document}

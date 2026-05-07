@@ -1,17 +1,28 @@
-# Experiments
+# Pilots
 
-Preliminary empirical work that shaped the *Margin Crystallization* algorithm specification in [`../APPROACH.md`](../APPROACH.md).
+Three preliminary tests cited in the paper (§5 and Appendix D) as motivating evidence for the four design choices in Margin Crystallization.
 
-## Files
+| Script | Model | Granularity | Reference | Metrics |
+|---|---|---|---|---|
+| [`test_strict.py`](test_strict.py)         | GPT-2 small (124M)    | per-scalar     | zero | argmax |
+| [`test_charitable.py`](test_charitable.py) | Pythia-160M (162M)    | per-component  | mean | argmax |
+| [`test_directeffect.py`](test_directeffect.py) | Pythia-410M (405M) | per-component | mean | argmax + top-3 + KL |
 
-| File | What it does |
-|------|-------------|
-| [`findings.md`](findings.md) | Consolidated results across the three test scripts, with the design lessons each one produced |
-| [`results.md`](results.md) | Early notebook results on GPT-2 small (seed-phase exploration) |
-| [`seed_phase.ipynb`](seed_phase.ipynb) | Original seed-phase notebook on GPT-2 small for 17 hand-curated sequences |
-| [`test_strict.py`](test_strict.py) | Per-scalar test on GPT-2 small with zero-reference ablation |
-| [`test_charitable.py`](test_charitable.py) | Per-component test on Pythia-160M with mean-activation reference |
-| [`test_directeffect.py`](test_directeffect.py) | Direct-effect scoring test on Pythia-410M with three metrics (argmax + top-3 + KL) |
+12 prompts × 4 query types per run. The numbers reported in the paper come from `test_directeffect.py`.
+
+## Headline results (recap of paper §5)
+
+Wins out of 12 on Pythia-410M:
+
+| | argmax | top-3 | KL < 1.0 |
+|---|--:|--:|--:|
+| `\|∇ log P\|` (gradient saliency)            | 0 | 1\* | 0 |
+| variance ranking                             | 3 | 4 | 5 |
+| **direct effect (single-shot)**              | **2** | **4** | **8** |
+| paper structure + DE seed/grow               | 3 | — | — |
+| variance seed + DE grow                      | 2 | — | — |
+
+\* the lone gradient-saliency win is a `" the"` default-token completion. See paper §5 for caveats.
 
 ## Requirements
 
@@ -21,19 +32,15 @@ transformers
 numpy
 ```
 
-CPU-only is fine. Runtimes:
-- `seed_phase.ipynb`: ~2–4 min
-- `test_strict.py`: ~50 min
-- `test_charitable.py`: ~3 min
-- `test_directeffect.py`: ~12 min
+CPU-only is fine. Runtimes: `test_strict.py` ~50 min, `test_charitable.py` ~3 min, `test_directeffect.py` ~12 min.
 
 ## Reproducibility
+
 - All scripts seed `torch.manual_seed(0)`.
 - Models loaded in `eval()` mode, no dropout, pure forward + backward, no sampling.
-- Re-running produces identical outputs modulo HF Hub transient errors.
 - Outputs land in `experiments/outputs/` (gitignored).
 
-## Known limitations
-- Sample sizes are small (12 prompts in each script, 17 in the notebook). These are research-quality probes, not statistical studies.
-- Pythia-410M is the largest model run. The next defensible scale is Pythia-1.4B–6.9B.
-- The Margin Crystallization algorithm itself has not been run yet. This experiments tree is the empirical motivation; the v0 prototype is the next milestone.
+## Limitations
+
+- 12 prompts is a research-quality probe, not a statistical study. Paper §5 frames these as preliminary; the proposed FSCB benchmark (800 contrast pairs across 8 strata) is the test bench under which the algorithmic contribution is licensed or dissolved.
+- Pythia-410M margins are 0.06–2.26 raw logits (median ~0.5); argmax preservation is noise-dominated in this regime, motivating the soft margin-coverage criterion adopted in the paper.
