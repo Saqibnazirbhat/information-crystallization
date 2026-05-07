@@ -14,3 +14,14 @@ Thumbs.db
 experiments/outputs/
 *.pyc
 __pycache__/
+
+# LaTeX build artifacts (paper.pdf is committed; everything else is regenerable)
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.toc
+*.fdb_latexmk
+*.fls
+*.synctex.gz

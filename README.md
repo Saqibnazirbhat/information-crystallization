@@ -8,7 +8,9 @@ Saqib Nazir Bhat &nbsp;·&nbsp; Independent research &nbsp;·&nbsp; [CC BY 4.0](
 
 ## Paper
 
-The full paper is in [`paper.tex`](paper.tex) with bibliography in [`references.bib`](references.bib). Build with:
+[**Read the PDF**](paper.pdf) &nbsp;·&nbsp; [LaTeX source](paper.tex) &nbsp;·&nbsp; [bibliography](references.bib)
+
+Build from source:
 
 ```bash
 pdflatex paper.tex
@@ -16,6 +18,8 @@ bibtex paper
 pdflatex paper.tex
 pdflatex paper.tex
 ```
+
+Tested with TeX Live 2026 (TinyTeX). Required packages: `geometry`, `amsmath`, `amssymb`, `amsthm`, `algorithm`, `algpseudocode`, `booktabs`, `hyperref`, `natbib`, `graphicx`, `xcolor`, `microtype` (with `cm-super` or `lmodern` for scalable fonts).
 
 ## Abstract
 

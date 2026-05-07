@@ -180,7 +180,11 @@ A coupling proof sketch is in Appendix~\ref{app:proofs}. This is what the online
 
 \begin{observation}[Negative certificate]
 \label{obs:distributed}
-Fix $(X, X', \hat x, \hat x')$, $F$, sparsity budget $k$, threshold $\beta$. If $\max_{S \subseteq F,\, |S| \leq k} \sigma(S) < \beta\delta_{\text{full}}$, then no $|S| \leq k$ is $\beta$-margin-faithful.
+Fix $(X, X', \hat x, \hat x')$, $F$, sparsity budget $k$, threshold $\beta$. If
+\[
+\max_{S \subseteq F,\, |S| \leq k} \sigma(S) < \beta \, \delta_{\text{full}},
+\]
+then no $S$ with $|S| \leq k$ is $\beta$-margin-faithful.
 \end{observation}
 
 The condition is the contrapositive of the sufficiency conjunct. Its hypothesis is checkable from the algorithm's search trace; its conclusion certifies a structured negative result. When Algorithm~\ref{alg:mc} exhausts candidates without reaching $\alpha\delta_{\text{full}}$, the empirical realization is the typed return \texttt{"distributed"}. We make one inferential commitment we did not earlier: the pilot finding that no condition on Pythia-410M heads-and-MLPs yields a sparse argmax-preserving subset is \emph{not} evidence for the hypothesis on SAE features at scale. Different decomposition, different model, different metric. Frequency of certificate-firing is an empirical question for FSCB.
@@ -208,8 +212,8 @@ We translate the margin-budget framing into an executable procedure. Algorithm~\
   \State $\Delta \gets \delta_{\text{new}} - \mathit{captured}$
   \If{$\Delta \leq 0$} \textbf{continue} \Comment{(a) forward gate}
   \EndIf
-  \State $\nu \gets \mathrm{mean}_{X_h \in \mathcal{H}}\,\mathbb{1}\!\left[\delta(M|_{F \setminus S_{\text{new}}}; X_h) \leq (1-\beta)\delta_{\text{full}}(X_h)\right]$ \Comment{margin necessity}
-  \State $\sigma \gets \mathrm{mean}_{X_h \in \mathcal{H}}\,\mathbb{1}\!\left[\delta(M|_{S_{\text{new}}}; X_h) \geq \beta\delta_{\text{full}}(X_h)\right]$ \Comment{margin sufficiency}
+  \State $\nu \gets \mathrm{mean}_{X_h \in \mathcal{H}}\,\mathbf{1}\!\left[\delta(M|_{F \setminus S_{\text{new}}}; X_h) \leq (1-\beta)\delta_{\text{full}}(X_h)\right]$ \Comment{margin necessity}
+  \State $\sigma \gets \mathrm{mean}_{X_h \in \mathcal{H}}\,\mathbf{1}\!\left[\delta(M|_{S_{\text{new}}}; X_h) \geq \beta\delta_{\text{full}}(X_h)\right]$ \Comment{margin sufficiency}
   \If{$\min(\nu, \sigma) < \beta$}
     \State $\mathit{rejected}.\mathrm{append}((f, \psi_f, \nu, \sigma))$; \textbf{continue} \Comment{(b) faithfulness gate}
   \EndIf
@@ -250,17 +254,18 @@ Let $d = |F|$, $H = |\mathcal{H}|$, $T$ the cost of one full-model forward pass.
 
 \begin{table}[t]
 \centering
+\small
 \caption{Complexity comparison. $d = |F|$, $H$ holdout size, $T$ forward-pass cost. ACDC counted in patches; AtP* in backward passes; MC in forward passes including the gate.}
 \label{tab:complexity}
-\begin{tabular}{lll}
+\begin{tabular}{@{}lll@{}}
 \toprule
 Method & Cost & Output \\
 \midrule
 ACDC \citep{conmy2023acdc} & $O(d^2 \cdot T)$ patches & faithful subgraph \\
-AtP* \citep{kramar2024atp} & $O(d \cdot T)$ backward & feature ranking, no subnetwork \\
-SFC post-hoc \citep{marks2024sparse} & $O(d \cdot T)$ ranking + final patch & SAE-feature subset, validated post hoc \\
+AtP* \citep{kramar2024atp} & $O(d \cdot T)$ backward & feature ranking \\
+SFC post hoc \citep{marks2024sparse} & $O(d \cdot T)$ + final patch & SAE-feature subset, post hoc \\
 Exhaustive subset search & $O(2^d \cdot T)$ & optimal $|S|$ \\
-\textbf{Margin Crystallization} & $O((|S|+R) \cdot H \cdot T)$ & $\beta$-margin-faithful $S$ or \texttt{"distributed"} \\
+\textbf{Margin Crystallization} & $O((|S|+R) \cdot H \cdot T)$ & $\beta$-faithful $S$ or distributed \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -315,15 +320,15 @@ In our regime $|S| \approx 50$, $H \in [10, 50]$, $d \in [10^4, 10^6]$. At $d = 
 
 \begin{table}[t]
 \centering
+\small
 \caption{Model ladder, SAE source, and execution status.}
 \label{tab:models}
-\begin{tabular}{llll}
+\begin{tabular}{@{}p{2.6cm}p{1.5cm}p{6.0cm}p{2.6cm}@{}}
 \toprule
 Family & Sizes & SAE source & Status \\
 \midrule
-GPT-2 small \citep{radford2019language} & 124M & none (pilot only) & \textsc{Pilot} (motivating) \\
-Pythia \citep{biderman2023pythia} & 70M--6.9B & top-$k$ SAE, residual, every 4th layer \citep{gao2024scaling}; & 410M run; 1.4B partial; \\
- & & $k=64$, 200M tokens of The Pile \citep{gao2020pile} & 2.8B/6.9B \textsc{Proposed} \\
+GPT-2 small \citep{radford2019language} & 124M & none (pilot only) & \textsc{Pilot} \\
+Pythia \citep{biderman2023pythia} & 70M--6.9B & top-$k$ SAE on residual, every 4th layer \citep{gao2024scaling}; $k=64$; 200M tokens of The Pile \citep{gao2020pile} & 410M run; 1.4B partial; 2.8B/6.9B \textsc{Proposed} \\
 Gemma 2 \citep{riviere2024gemma2} & 2B, 9B & Gemma Scope JumpReLU \citep{lieberum2024gemma,rajamanoharan2024jumprelu} & \textsc{Proposed} \\
 \bottomrule
 \end{tabular}
@@ -341,9 +346,10 @@ Each pair $(X, \hat x, X', \hat x')$ ships with three views: \textbf{contrast} (
 
 \begin{table}[t]
 \centering
+\small
 \caption{Baselines and the MC component each ablates.}
 \label{tab:baselines}
-\begin{tabular}{lll}
+\begin{tabular}{@{}p{4.4cm}p{6.5cm}p{2.0cm}@{}}
 \toprule
 Baseline & What it ablates & Reference \\
 \midrule
@@ -387,19 +393,17 @@ We executed three small-scale pilots before the FSCB protocol was frozen. These 
 
 \begin{table}[t]
 \centering
+\footnotesize
 \caption{Ablation table. All rows \textsc{Proposed}; reported on FSCB at Pythia-410M.}
 \label{tab:ablations}
-\small
-\begin{tabular}{cllll}
+\begin{tabular}{@{}cp{2.0cm}p{3.5cm}p{4.6cm}p{2.4cm}@{}}
 \toprule
 \# & Ablation & Variants & Hypothesis & Falsifier \\
 \midrule
 1 & Score function & direct effect vs.\ $|\nabla \log P|$ & DE $\geq 5$pp faithfulness lift & $<5$pp or reversed \\
 2 & Gate placement & online vs.\ post-hoc & online $\geq 5$pp at matched $|S|$ & $<5$pp or reversed \\
-3 & Contrast type & contrast vs.\ single-prompt mean & contrast reduces default-token & $<0.3$ \\
- & & & dist-frac by $\geq 0.3$ &  \\
-4 & Stopping & margin vs.\ argmax & margin admits sparse $S$ on & not satisfied \\
- & & & $>50\%$ low-$\delta_{\text{full}}$ prompts &  \\
+3 & Contrast type & contrast vs.\ single-prompt mean & contrast reduces default-token dist-frac by $\geq 0.3$ & $<0.3$ \\
+4 & Stopping & margin vs.\ argmax & margin admits sparse $S$ on $>50\%$ low-$\delta_{\text{full}}$ prompts & not satisfied \\
 5 & Distributed return & enabled vs.\ forced non-empty $S$ & forced drops faithfulness $\geq 10$pp & $<10$pp \\
 6 & $\beta$ sweep & $\{0.3, 0.5, 0.7, 0.9\}$ & dist-frac monotone in $\beta$ & non-monotone \\
 7 & $\alpha$ sweep & $\{0.5, 0.7, 0.9, 0.95\}$ & $|S|$ convex in $\alpha$ & linear or no \\
@@ -501,8 +505,9 @@ FSCB ships eight strata of 100 contrast pairs each. Each pair $(X, \hat x, X', \
 \section{Pilot reproduction and argmax-predicate variant}
 \label{app:argmax}
 
-The 12-prompt pilot used three test harnesses: \texttt{test\_strict.py} (per-scalar score on GPT-2 small), \texttt{test\_charitable.py} (per-component score on Pythia-160M with $|\nabla|$, variance, bottom-up-$|\nabla|$), and \texttt{test\_directeffect.py} (Pythia-410M with $|\nabla|$, variance, direct effect under both KL$<1$ and argmax-preservation). Raw per-prompt numbers: Pythia-410M direct effect achieves KL$<1$ at $50\%$ kept on 8/12 prompts (vs.\ 0/12 for $|\nabla|$, 5/12 for variance). Argmax preservation at the same kept fraction is 2/12 for direct effect, 0/12 for the others; the best non-trivial keep-fraction across all settings is $0.36$.
+{\sloppy
+The 12-prompt pilot used three test harnesses: \texttt{test\_strict.py} (per-scalar score on GPT-2 small); \texttt{test\_charitable.py} (per-component score on Pythia-160M with $|\nabla|$, variance, bottom-up-$|\nabla|$); and \texttt{test\_directeffect.py} (Pythia-410M with $|\nabla|$, variance, direct effect under both KL$<1$ and argmax-preservation). Raw per-prompt numbers: Pythia-410M direct effect achieves KL$<1$ at $50\%$ kept on 8/12 prompts (vs.\ 0/12 for $|\nabla|$, 5/12 for variance). Argmax preservation at the same kept fraction is 2/12 for direct effect, 0/12 for the others; the best non-trivial keep-fraction across all settings is $0.36$.\par}
 
-\paragraph{Argmax-flip variant of Algorithm~\ref{alg:mc}.} Replace lines 10--11 with $\nu^{\text{argmax}} \gets \mathrm{mean}_{X_h} \mathbb{1}[\arg\max M(X_h \mid \text{ablate } F\setminus S_{\text{new}}) \neq \hat x_h]$ and $\sigma^{\text{argmax}} \gets \mathrm{mean}_{X_h} \mathbb{1}[\arg\max M(X'_h \mid \text{patch } S_{\text{new}}\,\text{from}\,X_h) = \hat x_h]$, with the same $\beta$ threshold. This is the v1 predicate; in the regime where the theory says argmax is noise-dominated it is strictly worse than the margin variant in the main text. Both predicates are reported on FSCB (\S\ref{sec:experiments}, robustness check 6).
+\paragraph{Argmax-flip variant of Algorithm~\ref{alg:mc}.} Replace lines 10--11 with $\nu^{\text{argmax}} \gets \mathrm{mean}_{X_h} \mathbf{1}[\arg\max M(X_h \mid \text{ablate } F\setminus S_{\text{new}}) \neq \hat x_h]$ and $\sigma^{\text{argmax}} \gets \mathrm{mean}_{X_h} \mathbf{1}[\arg\max M(X'_h \mid \text{patch } S_{\text{new}}\,\text{from}\,X_h) = \hat x_h]$, with the same $\beta$ threshold. This is the v1 predicate; in the regime where the theory says argmax is noise-dominated it is strictly worse than the margin variant in the main text. Both predicates are reported on FSCB (\S\ref{sec:experiments}, robustness check 6).
 
 \end{document}
